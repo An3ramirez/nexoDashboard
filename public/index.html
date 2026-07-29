@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexoDashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/theme.css">
+    <style>
+        .brand-badge {
+            width: 34px; height: 34px; border-radius: 10px;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            display: flex; align-items: center; justify-content: center; font-size: 16px;
+        }
+        .metric-chip[data-tint="cpu"]  { background: color-mix(in srgb, var(--series-cpu) 16%, transparent); color: var(--series-cpu); }
+        .metric-chip[data-tint="ram"]  { background: color-mix(in srgb, var(--series-ram) 16%, transparent); color: var(--series-ram); }
+        .metric-chip[data-tint="disk"] { background: color-mix(in srgb, var(--series-disk) 16%, transparent); color: var(--series-disk); }
+        .metric-chip[data-tint="net"]  { background: color-mix(in srgb, var(--series-net) 16%, transparent); color: var(--series-net); }
+        .metric-chip[data-tint="gw"]   { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
+        .stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
+        input[type="range"] { accent-color: var(--accent); height: 4px; }
+        table.data-table { width: 100%; font-size: 12.5px; }
+        table.data-table th { text-align: left; padding-bottom: 8px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-muted); border-bottom: 1px solid var(--border); }
+        table.data-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--border); color: var(--ink-secondary); }
+        table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
+        table.data-table tr:last-child td { border-bottom: none; }
+        .pill { font-size: 10.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); }
+    </style>
+</head>
+<body class="p-4 md:p-8 antialiased">
+    <div class="max-w-7xl mx-auto">
+        <header class="flex items-center justify-between mb-8">
+            <div class="flex items-center gap-3">
+                <div class="brand-badge">🔗</div>
+                <div>
+                    <div class="text-sm font-bold text-white leading-tight">NexoDashboard</div>
+                    <div class="text-xs text-white/35" id="hostnameTag">--</div>
+                </div>
+                <span id="serverBadge" class="pill">● --</span>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-white/35">
+                <span id="pingTag">Ping: --</span>
+                <button id="logoutBtn" class="btn-action rounded-lg px-3 py-1.5 text-xs font-semibold">Salir</button>
+            </div>
+        </header>
+
+        <!-- Reproductor de música (MPD -> Bluetooth) -->
+        <div class="card p-5 mb-4">
+            <div class="flex items-center gap-4 flex-wrap md:flex-nowrap">
+                <div style="position:relative;width:44px;height:44px;flex-shrink:0;">
+                    <div id="playerIcon" class="icon-chip metric-chip" data-tint="gw" style="width:44px;height:44px;font-size:20px;position:absolute;inset:0;">🎵</div>
+                    <img id="playerArt" alt="" style="width:44px;height:44px;border-radius:10px;object-fit:cover;position:absolute;inset:0;display:none;">
+                </div>
+                <div class="flex-1 min-w-0 order-1 basis-full md:basis-auto md:order-none">
+                    <div class="text-sm font-bold text-white truncate" data-value="playerTitle">--</div>
+                    <div class="text-xs text-white/40 truncate" data-value="playerArtist">--</div>
+                    <div class="w-full h-1 rounded-full bg-white/10 mt-2 overflow-hidden">
+                        <div id="playerProgress" class="h-full rounded-full" style="width:0%;background:var(--accent)"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-white/30 mt-1">
+                        <span data-value="playerElapsed">0:00</span>
+                        <span data-value="playerDuration">0:00</span>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0">
+                    <button id="playerPrev" class="btn-action rounded-full w-9 h-9 flex items-center justify-center text-sm">⏮</button>
+                    <button id="playerToggle" class="btn-primary rounded-full w-11 h-11 flex items-center justify-center text-lg">⏸</button>
+                    <button id="playerNext" class="btn-action rounded-full w-9 h-9 flex items-center justify-center text-sm">⏭</button>
+                </div>
+                <div class="hidden md:flex items-center gap-1.5 flex-shrink-0">
+                    <span class="text-xs">🔊</span>
+                    <button id="volDown" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs">−</button>
+                    <input type="range" id="playerVolume" min="0" max="100" value="60" class="w-24">
+                    <button id="volUp" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs">+</button>
+                    <span class="text-[10px] text-white/40 w-9 text-right" data-value="playerVolumeLabel">60%</span>
+                </div>
+                <button id="playerRandom" class="btn-action rounded-lg px-2.5 py-1.5 text-xs flex-shrink-0" title="Aleatorio">🔀</button>
+            </div>
+
+            <div id="bluetoothInfo" class="hidden items-center gap-2 mt-3 pt-3 border-t border-white/5 text-[10px] text-white/35">
+                <span>🔵</span>
+                <span data-value="btName">--</span>
+                <span data-value="btBattery"></span>
+            </div>
+
+            <button id="queueToggle" class="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/5 text-[10px] text-white/40 hover:text-white/60 uppercase font-bold tracking-wider w-full">
+                <span id="queueChevron">▶</span> Cola de reproducción
+            </button>
+            <div id="queuePanel" class="hidden mt-2 max-h-64 overflow-y-auto space-y-0.5"></div>
+        </div>
+
+        <!-- 4 Cards principales: CPU, RAM, Disco, Red -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+            <!-- CPU -->
+            <div class="card p-5">
+                <div class="flex items-center gap-2.5 mb-4">
+                    <div class="icon-chip metric-chip" data-tint="cpu">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                    </div>
+                    <span class="label">CPU</span>
+                </div>
+                <div class="stat-value" data-color="cpu">
+                    <span data-value="cpu" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                </div>
+                <div class="text-xs text-white/35 mt-1 mb-3" data-value="temp">🌡️ --</div>
+                <svg data-spark="cpu" viewBox="0 0 100 24" preserveAspectRatio="none" class="w-full h-6"></svg>
+                <div id="coreBars" class="grid grid-cols-4 gap-1 mt-3"></div>
+            </div>
+
+            <!-- RAM -->
+            <div class="card p-5">
+                <div class="flex items-center gap-2.5 mb-4">
+                    <div class="icon-chip metric-chip" data-tint="ram">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    </div>
+                    <span class="label">RAM</span>
+                </div>
+                <div class="stat-value" data-color="ram">
+                    <span data-value="ram" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                </div>
+                <div class="flex justify-between text-xs text-white/35 mt-1 mb-3">
+                    <span data-value="ramUsedLabel">--</span>
+                    <span data-value="ramTotalLabel">--</span>
+                </div>
+                <svg data-spark="ram" viewBox="0 0 100 24" preserveAspectRatio="none" class="w-full h-6"></svg>
+            </div>
+
+            <!-- Disco -->
+            <div class="card p-5">
+                <div class="flex items-center gap-2.5 mb-4">
+                    <div class="icon-chip metric-chip" data-tint="disk">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                    </div>
+                    <span class="label">Disco</span>
+                </div>
+                <div class="stat-value" data-color="disk">
+                    <span data-value="disk" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                </div>
+                <div class="flex justify-between text-xs text-white/35 mt-1">
+                    <span data-value="diskUsedLabel">--</span>
+                    <span data-value="diskTotalLabel">--</span>
+                </div>
+            </div>
+
+            <!-- Red -->
+            <div class="card p-5">
+                <div class="flex items-center gap-2.5 mb-4">
+                    <div class="icon-chip metric-chip" data-tint="net">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0"></path></svg>
+                    </div>
+                    <span class="label">Red</span>
+                </div>
+                <div class="text-lg font-bold leading-snug" style="color:var(--series-net)">
+                    <span data-value="netDown" class="stat-val block"><div class="sk h-5 w-20"></div></span>
+                    <span data-value="netUp" class="stat-val block mt-1"><div class="sk h-5 w-20"></div></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Uptime / Swap / OS -->
+        <div class="card p-5 mb-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div>
+                    <div class="label mb-1.5">⏱️ Uptime</div>
+                    <div class="text-lg font-bold text-white" data-value="uptime"><div class="sk h-6 w-32"></div></div>
+                </div>
+                <div>
+                    <div class="label mb-1.5">💾 Swap</div>
+                    <div class="text-lg font-bold" data-color="swap" data-value="swapLabel"><div class="sk h-6 w-20"></div></div>
+                </div>
+                <div>
+                    <div class="label mb-1.5">🖥️ OS</div>
+                    <div class="text-lg font-bold text-white" data-value="osDistro"><div class="sk h-6 w-40"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- OpenClaw Gateway -->
+        <div class="card p-6 mb-4">
+            <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center gap-2.5">
+                    <div class="icon-chip metric-chip" data-tint="gw">⚙️</div>
+                    <span class="label">OpenClaw Gateway</span>
+                </div>
+                <span id="latencyBadge" class="pill text-white/30">-- ms</span>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
+                <div>
+                    <div class="label mb-1.5">Estado</div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full" data-value="ocStatusDot" style="background:#555"></span>
+                        <span class="text-sm font-bold text-white" data-value="ocStatusText">--</span>
+                    </div>
+                </div>
+                <div><div class="label mb-1.5">PID</div><div class="text-sm text-white/80" data-value="ocPid">--</div></div>
+                <div><div class="label mb-1.5">RAM</div><div class="text-sm text-white/80" data-value="ocMem">--</div></div>
+                <div><div class="label mb-1.5">Tareas</div><div class="text-sm text-white/80" data-value="ocTasks">--</div></div>
+                <div><div class="label mb-1.5">Versión</div><div class="text-sm text-white/80" data-value="ocVersion">--</div></div>
+                <div><div class="label mb-1.5">Sesiones</div><div class="text-sm text-white/80" data-value="ocSessions">--</div></div>
+                <div><div class="label mb-1.5">Modelo</div><div class="text-sm text-white/80" data-value="ocModel">--</div></div>
+                <div><div class="label mb-1.5">Reinicios</div><div class="text-sm text-white/80" data-value="ocRestarts">--</div></div>
+            </div>
+        </div>
+
+        <!-- Acceso rápido al Panel de OpenClaw -->
+        <div class="card p-6 mb-4 flex items-center justify-between">
+            <div>
+                <div class="label mb-1.5">🎛️ Panel de Control</div>
+                <p class="text-xs text-white/40">Accede a la consola web de OpenClaw Gateway</p>
+            </div>
+            <a href="/oc-panel-login" class="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide inline-flex items-center gap-2">
+                <span>🔓</span> Abrir Panel
+            </a>
+        </div>
+
+        <!-- Acciones del Servidor -->
+        <div class="card p-6 mb-4">
+            <div class="label mb-4">🛠️ Acciones del Servidor</div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button data-action="restart-openclaw" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
+                    <span class="text-lg">🔄</span> Reiniciar OpenClaw
+                </button>
+                <button data-action="free-ram" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
+                    <span class="text-lg">🧹</span> Liberar RAM
+                </button>
+                <button data-action="reboot" class="btn-action btn-danger rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5" style="color:var(--status-warning)">
+                    <span class="text-lg">♻️</span> Reiniciar Servidor
+                </button>
+                <button data-action="shutdown" class="btn-action btn-danger rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5" style="color:var(--status-critical)">
+                    <span class="text-lg">⏻</span> Apagar Servidor
+                </button>
+            </div>
+            <div id="actionResult" class="text-xs mt-4 min-h-[16px] text-white/40"></div>
+        </div>
+
+        <!-- Cambiar Clave de Acceso -->
+        <div class="card p-6 mb-4">
+            <div class="label mb-4">🔑 Cambiar Clave de Acceso</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input type="password" id="curPass" placeholder="Clave actual" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
+                <input type="password" id="newPass" placeholder="Clave nueva (mín. 8 caracteres)" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
+                <input type="password" id="newPass2" placeholder="Confirmar clave nueva" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
+            </div>
+            <div class="flex items-center gap-3 mt-3">
+                <button id="changePassBtn" class="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-2">
+                    <span id="changePassLabel">Actualizar clave</span>
+                </button>
+                <div id="changePassResult" class="text-xs min-h-[16px]"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+            <!-- Sesiones Activas -->
+            <div class="card p-6">
+                <div class="label mb-4">🔄 Sesiones Recientes</div>
+                <div id="sessionsContainer">
+                    <div class="text-xs text-white/30 text-center py-6">Esperando datos...</div>
+                </div>
+            </div>
+
+            <!-- Top Procesos -->
+            <div class="card p-6">
+                <div class="label mb-4">📊 Top Procesos</div>
+                <div id="processesContainer">
+                    <div class="text-xs text-white/30 text-center py-6">Esperando datos...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de confirmación (reboot / shutdown) -->
+    <div id="confirmModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4">
+        <div class="card-raised rounded-2xl p-6 w-full max-w-sm">
+            <h3 id="modalTitle" class="text-sm font-bold text-white mb-2">--</h3>
+            <p id="modalWarning" class="text-xs text-white/45 mb-4 leading-relaxed">--</p>
+            <div id="modalHoursRow" class="mb-3 hidden">
+                <label class="label block mb-1.5">Despertar en</label>
+                <select id="modalHours" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white">
+                    <option value="1">1 hora</option>
+                    <option value="4">4 horas</option>
+                    <option value="12">12 horas</option>
+                    <option value="24">24 horas</option>
+                </select>
+            </div>
+            <label class="label block mb-1.5">Clave</label>
+            <input type="password" id="modalPassword" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white mb-3">
+            <label class="label block mb-1.5">Escribe <span id="modalConfirmWord" class="text-white/70"></span> para confirmar</label>
+            <input type="text" id="modalConfirmInput" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white mb-4">
+            <div class="flex gap-2">
+                <button id="modalCancel" class="flex-1 btn-action rounded-xl p-2.5 text-xs font-semibold">Cancelar</button>
+                <button id="modalConfirm" disabled class="flex-1 rounded-xl p-2.5 text-xs font-bold text-white" style="background:color-mix(in srgb, var(--status-critical) 55%, transparent)">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const q = s => document.querySelector(`[data-value="${s}"]`);
+        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {} };
+        let lastArtKey = null;
+
+        function fmtTime(sec) {
+            if (sec == null || isNaN(sec)) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return m + ':' + String(s).padStart(2, '0');
+        }
+
+        function fmtBytes(b) {
+            if (b == null) return '?';
+            return b > 1e9 ? (b/1e9).toFixed(1)+'G' : b > 1e6 ? (b/1e6).toFixed(1)+'M' : b > 1e3 ? (b/1e3).toFixed(0)+'K' : b+'B';
+        }
+
+        function fmtUptime(sec) {
+            if (sec == null) return '--';
+            const d = Math.floor(sec/86400);
+            sec %= 86400;
+            const h = Math.floor(sec/3600);
+            sec %= 3600;
+            const m = Math.floor(sec/60);
+            return d+'d '+h+'h '+m+'m';
+        }
+
+        // good / warning / critical — paleta de estado fija, no se reusa como color categórico
+        const STATUS_VAR = { good: 'var(--status-good)', warning: 'var(--status-warning)', critical: 'var(--status-critical)' };
+        function statusLevel(value, warnAt, critAt) {
+            if (value == null) return 'good';
+            return value >= critAt ? 'critical' : value >= warnAt ? 'warning' : 'good';
+        }
+        function applyStatus(key, value, warnAt, critAt) {
+            const el = document.querySelector(`[data-color="${key}"]`);
+            if (!el) return;
+            const level = statusLevel(value, warnAt, critAt);
+            el.classList.remove('status-good', 'status-warning', 'status-critical');
+            el.classList.add(`status-${level}`);
+        }
+
+        function sparkline(el, values, color) {
+            if (!el || values.length < 2) return;
+            const w = 100, h = 24;
+            const max = 100;
+            const step = w / (values.length - 1);
+            const pts = values.map((v, i) => [i * step, h - (Math.min(v, max) / max) * h]);
+            const line = pts.map(p => p.join(',')).join(' ');
+            const area = `0,${h} ${line} ${w},${h}`;
+            el.innerHTML = `
+                <polygon points="${area}" fill="${color}" opacity="0.14"></polygon>
+                <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+        }
+
+        function render() {
+            const sys = state.sys || {};
+            const oc = state.oc || {};
+            const player = state.player || {};
+            const bt = state.bluetooth || {};
+
+            const btInfo = document.getElementById('bluetoothInfo');
+            if (bt.connected) {
+                btInfo.classList.remove('hidden');
+                btInfo.classList.add('flex');
+                document.querySelector('[data-value="btName"]').textContent = bt.name || 'Dispositivo Bluetooth';
+                document.querySelector('[data-value="btBattery"]').textContent = bt.battery != null ? `· 🔋 ${bt.battery}%` : '';
+            } else {
+                btInfo.classList.add('hidden');
+                btInfo.classList.remove('flex');
+            }
+
+            if (player.ok) {
+                q('playerTitle').textContent = player.title || 'Sin reproducción';
+                q('playerArtist').textContent = player.artist || player.album || '--';
+                q('playerElapsed').textContent = fmtTime(player.elapsed);
+                q('playerDuration').textContent = fmtTime(player.duration);
+                const pct = player.duration ? Math.min(100, (player.elapsed / player.duration) * 100) : 0;
+                document.getElementById('playerProgress').style.width = pct + '%';
+                document.getElementById('playerToggle').textContent = player.state === 'play' ? '⏸' : '▶';
+                const randomBtn = document.getElementById('playerRandom');
+                randomBtn.style.background = player.random ? 'var(--accent)' : '';
+                randomBtn.style.color = player.random ? '#fff' : '';
+                randomBtn.style.borderColor = player.random ? 'var(--accent)' : '';
+                const volSlider = document.getElementById('playerVolume');
+                if (!volSlider.dataset.dragging) {
+                    volSlider.value = player.volume;
+                    q('playerVolumeLabel').textContent = player.volume + '%';
+                }
+
+                const artKey = (player.title || '') + '|' + (player.artist || '');
+                if (artKey !== lastArtKey) {
+                    lastArtKey = artKey;
+                    const img = document.getElementById('playerArt');
+                    const icon = document.getElementById('playerIcon');
+                    img.onload = () => { img.style.display = 'block'; icon.style.display = 'none'; };
+                    img.onerror = () => { img.style.display = 'none'; icon.style.display = 'flex'; };
+                    img.src = '/api/player/art?t=' + Date.now();
+                }
+            } else {
+                q('playerTitle').textContent = 'MPD no disponible';
+                q('playerArtist').textContent = '--';
+            }
+
+            if (sys.cpu != null) { q('cpu').textContent = sys.cpu + '%'; applyStatus('cpu', sys.cpu, 70, 90); }
+            if (sys.cpuTemp) q('temp').textContent = '🌡️ ' + sys.cpuTemp + '°C';
+
+            if (sys.memUsed != null) { q('ram').textContent = sys.memUsed + '%'; applyStatus('ram', sys.memUsed, 80, 92); }
+            if (sys.memUsedGB) q('ramUsedLabel').textContent = sys.memUsedGB + ' GB';
+            if (sys.memTotalGB) q('ramTotalLabel').textContent = sys.memTotalGB + ' GB';
+
+            if (sys.diskUsedPct != null) {
+                q('disk').textContent = sys.diskUsedPct + '%';
+                applyStatus('disk', sys.diskUsedPct, 85, 95);
+                q('diskUsedLabel').textContent = (sys.diskUsedGB || '?') + ' GB';
+                q('diskTotalLabel').textContent = (sys.diskTotalGB || '?') + ' GB';
+            }
+
+            if (sys.netRx != null) {
+                q('netDown').textContent = '⬇ ' + fmtBytes(sys.netRx)+'/s';
+                q('netUp').textContent = '⬆ ' + fmtBytes(sys.netTx)+'/s';
+            }
+
+            if (sys.hostname) document.getElementById('hostnameTag').textContent = sys.hostname;
+            if (sys.uptime != null) q('uptime').textContent = fmtUptime(sys.uptime);
+            if (sys.osDistro) q('osDistro').textContent = sys.osDistro;
+            if (sys.swapUsedPct != null) {
+                q('swapLabel').textContent = sys.swapUsedPct + '%';
+                applyStatus('swap', sys.swapUsedPct, 40, 75);
+            }
+
+            if (Array.isArray(sys.cpuCores) && sys.cpuCores.length) {
+                const container = document.getElementById('coreBars');
+                container.innerHTML = sys.cpuCores.map(load => {
+                    const level = statusLevel(load, 70, 90);
+                    return `<div class="core-bar-track"><div class="core-bar-fill" style="width:${Math.min(load,100)}%;background:${STATUS_VAR[level]}"></div></div>`;
+                }).join('');
+            }
+
+            const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+            sparkline(document.querySelector('[data-spark="cpu"]'), state.cpuHistory, cssVar('--series-cpu'));
+            sparkline(document.querySelector('[data-spark="ram"]'), state.memHistory, cssVar('--series-ram'));
+
+            const badge = document.getElementById('serverBadge');
+            if (socket.connected) {
+                badge.textContent = '● Online';
+                badge.className = 'pill online';
+            } else {
+                badge.textContent = '● Offline';
+                badge.className = 'pill offline';
+            }
+
+            const ok = oc.gatewayOk === true;
+            q('ocStatusDot').style.background = ok ? 'var(--status-good)' : 'var(--status-critical)';
+            q('ocStatusText').textContent = ok ? 'Conectado' : (oc.status || 'Desconocido');
+            if (oc.pid != null) q('ocPid').textContent = oc.pid;
+            if (oc.memMB != null) q('ocMem').textContent = oc.memMB + ' MB';
+            if (oc.tasks != null) q('ocTasks').textContent = oc.tasks;
+            if (oc.version) q('ocVersion').textContent = oc.version;
+            if (oc.sessionsActive != null) q('ocSessions').textContent = oc.sessionsActive;
+            if (oc.nRestarts != null) q('ocRestarts').textContent = oc.nRestarts;
+            const latBadge = document.getElementById('latencyBadge');
+            if (oc.healthLatencyMs != null) {
+                latBadge.textContent = oc.healthLatencyMs + ' ms';
+                latBadge.className = 'pill ' + (ok ? 'status-good' : 'status-critical');
+                latBadge.style.borderColor = ok ? 'color-mix(in srgb, var(--status-good) 40%, transparent)' : 'color-mix(in srgb, var(--status-critical) 40%, transparent)';
+            }
+
+            if (state.models && state.models.primary) {
+                q('ocModel').textContent = state.models.primary.split('/').pop();
+            }
+
+            if (state.ping != null) {
+                document.getElementById('pingTag').textContent = 'Ping: ' + state.ping + ' ms';
+            }
+
+            const sList = oc.sessions || [];
+            const sessionsContainer = document.getElementById('sessionsContainer');
+            if (sList.length > 0) {
+                let html = '<div class="overflow-x-auto"><table class="data-table">';
+                html += '<thead><tr><th>Agente</th><th>Modelo</th><th>Estado</th><th>Duración</th><th class="hidden md:table-cell">Canal</th></tr></thead><tbody>';
+                sList.slice(0, 8).forEach(s => {
+                    const scStyle = (s.status === 'active' || s.status === 'running') ? 'color:var(--status-good)' : '';
+                    html += `<tr>
+                        <td style="color:var(--ink)">${s.agentId || '?'}</td>
+                        <td>${s.model || '?'}</td>
+                        <td style="${scStyle}">${s.status || '?'}</td>
+                        <td>${s.duration || '?'}</td>
+                        <td class="hidden md:table-cell">${s.channel || '-'}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table></div>';
+                sessionsContainer.innerHTML = html;
+            } else if ((state.gatewayLogs || []).length > 0) {
+                const note = oc.sessionsCircuitOpen
+                    ? 'Lista de sesiones no disponible por ahora — mostrando actividad reciente del gateway:'
+                    : 'Sin sesiones activas — actividad reciente del gateway:';
+                sessionsContainer.innerHTML = `<div class="text-xs text-white/30 mb-2">${note}</div>` +
+                    `<div class="space-y-1 max-h-48 overflow-y-auto">${state.gatewayLogs.map(l => `<div class="log-line">${l.replace(/</g,'&lt;')}</div>`).join('')}</div>`;
+            }
+
+            const procs = state.processes || [];
+            if (procs.length > 0) {
+                const container = document.getElementById('processesContainer');
+                let html = '<div class="overflow-x-auto"><table class="data-table">';
+                html += '<thead><tr><th>Proceso</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead><tbody>';
+                procs.forEach(p => {
+                    html += `<tr>
+                        <td style="color:var(--ink)">${p.name || '?'}</td>
+                        <td>${p.pid}</td>
+                        <td>${p.cpu}%</td>
+                        <td>${p.memRss} MB</td>
+                    </tr>`;
+                });
+                html += '</tbody></table></div>';
+                container.innerHTML = html;
+            }
+        }
+
+        const socket = io();
+        socket.on('connect', render);
+        socket.on('disconnect', render);
+        socket.on('stats', (data) => {
+            if (data.sys) state.sys = data.sys;
+            if (data.oc) state.oc = data.oc;
+            if (data.models) state.models = data.models;
+            if (data.ping !== undefined) state.ping = data.ping;
+            if (data.memHistory) state.memHistory = data.memHistory;
+            if (data.cpuHistory) state.cpuHistory = data.cpuHistory;
+            if (data.processes) state.processes = data.processes;
+            if (data.gatewayLogs) state.gatewayLogs = data.gatewayLogs;
+            if (data.player) state.player = data.player;
+            if (data.bluetooth) state.bluetooth = data.bluetooth;
+            render();
+        });
+
+        // ===== Reproductor (MPD) =====
+        function postPlayer(path, body) {
+            return fetch(`/api/player/${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body || {}),
+            });
+        }
+        document.getElementById('playerToggle').addEventListener('click', () => postPlayer('toggle'));
+        document.getElementById('playerNext').addEventListener('click', () => postPlayer('next'));
+        document.getElementById('playerPrev').addEventListener('click', () => postPlayer('prev'));
+        document.getElementById('playerRandom').addEventListener('click', () => {
+            postPlayer('random', { enabled: !(state.player && state.player.random) });
+        });
+        const playerVolume = document.getElementById('playerVolume');
+        playerVolume.addEventListener('pointerdown', () => { playerVolume.dataset.dragging = '1'; });
+        playerVolume.addEventListener('change', () => {
+            delete playerVolume.dataset.dragging;
+            postPlayer('volume', { volume: Number(playerVolume.value) });
+        });
+
+        function adjustVolume(delta) {
+            const next = Math.min(100, Math.max(0, Number(playerVolume.value) + delta));
+            playerVolume.value = next;
+            playerVolume.dataset.dragging = '1';
+            q('playerVolumeLabel').textContent = next + '%';
+            postPlayer('volume', { volume: next }).finally(() => { delete playerVolume.dataset.dragging; });
+        }
+        document.getElementById('volDown').addEventListener('click', () => adjustVolume(-5));
+        document.getElementById('volUp').addEventListener('click', () => adjustVolume(5));
+
+        // ===== Cola de reproducción (acordeón) =====
+        document.getElementById('queueToggle').addEventListener('click', async () => {
+            const panel = document.getElementById('queuePanel');
+            const chevron = document.getElementById('queueChevron');
+            if (panel.classList.contains('hidden')) {
+                panel.classList.remove('hidden');
+                chevron.textContent = '▼';
+                await loadQueue();
+            } else {
+                panel.classList.add('hidden');
+                chevron.textContent = '▶';
+            }
+        });
+
+        async function loadQueue() {
+            const panel = document.getElementById('queuePanel');
+            panel.innerHTML = '<div class="text-xs text-white/30 py-2 text-center">Cargando...</div>';
+            try {
+                const r = await fetch('/api/player/queue');
+                const data = await r.json();
+                if (!data.ok || !data.items.length) {
+                    panel.innerHTML = '<div class="text-xs text-white/30 py-2 text-center">Cola vacía</div>';
+                    return;
+                }
+                panel.innerHTML = data.items.map(item => {
+                    const isCurrent = item.pos === data.currentPos;
+                    return `<div class="flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-white/5 queue-item" data-id="${item.id}" style="${isCurrent ? 'background:color-mix(in srgb, var(--accent) 14%, transparent);' : ''}">
+                        <span class="text-xs truncate ${isCurrent ? 'text-white font-bold' : 'text-white/60'}">${item.title}${item.artist ? ' — ' + item.artist : ''}</span>
+                        <span class="text-[10px] text-white/30 flex-shrink-0 ml-2">${fmtTime(item.duration)}</span>
+                    </div>`;
+                }).join('');
+                panel.querySelectorAll('.queue-item').forEach(el => {
+                    el.addEventListener('click', async () => {
+                        await postPlayer('playid', { id: Number(el.dataset.id) });
+                        loadQueue();
+                    });
+                });
+            } catch {
+                panel.innerHTML = '<div class="text-xs text-red-400 py-2 text-center">Error cargando la cola</div>';
+            }
+        }
+
+        // ===== Logout =====
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await fetch('/api/logout', { method: 'POST' });
+            window.location.href = '/login';
+        });
+
+        // ===== Cambiar clave =====
+        document.getElementById('changePassBtn').addEventListener('click', async () => {
+            const curPass = document.getElementById('curPass');
+            const newPass = document.getElementById('newPass');
+            const newPass2 = document.getElementById('newPass2');
+            const resultEl = document.getElementById('changePassResult');
+            const btn = document.getElementById('changePassBtn');
+            const label = document.getElementById('changePassLabel');
+
+            resultEl.textContent = '';
+            if (newPass.value !== newPass2.value) {
+                resultEl.style.color = 'var(--status-critical)';
+                resultEl.textContent = 'Las claves nuevas no coinciden';
+                return;
+            }
+            btn.disabled = true;
+            label.innerHTML = '<span class="spinner"></span>';
+            try {
+                const r = await fetch('/api/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ currentPassword: curPass.value, newPassword: newPass.value }),
+                });
+                const data = await r.json();
+                if (data.ok) {
+                    resultEl.style.color = 'var(--status-good)';
+                    resultEl.textContent = 'Clave actualizada correctamente';
+                    curPass.value = ''; newPass.value = ''; newPass2.value = '';
+                } else {
+                    resultEl.style.color = 'var(--status-critical)';
+                    resultEl.textContent = data.error || 'No se pudo actualizar';
+                }
+            } catch {
+                resultEl.style.color = 'var(--status-critical)';
+                resultEl.textContent = 'Error de conexión';
+            }
+            btn.disabled = false;
+            label.textContent = 'Actualizar clave';
+        });
+
+        // ===== Acciones del servidor =====
+        const actionResult = document.getElementById('actionResult');
+        function showResult(msg, isError) {
+            actionResult.textContent = msg;
+            actionResult.style.color = isError ? 'var(--status-critical)' : 'var(--status-good)';
+        }
+
+        async function callAction(action, body) {
+            const btn = document.querySelector(`[data-action="${action}"]`);
+            btn.disabled = true;
+            try {
+                const r = await fetch(`/api/actions/${action}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body || {}),
+                });
+                const data = await r.json();
+                if (!r.ok || data.ok === false) {
+                    showResult(`Error: ${data.error || 'no se pudo ejecutar'}`, true);
+                } else {
+                    showResult(data.message || `${action}: hecho${data.beforeGB != null ? ` (RAM disponible ${data.beforeGB}GB → ${data.afterGB}GB)` : ''}`, false);
+                }
+            } catch (e) {
+                showResult('Error de conexión', true);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Modal genérico para reboot/shutdown
+        const modal = document.getElementById('confirmModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalWarning = document.getElementById('modalWarning');
+        const modalHoursRow = document.getElementById('modalHoursRow');
+        const modalHours = document.getElementById('modalHours');
+        const modalPassword = document.getElementById('modalPassword');
+        const modalConfirmWord = document.getElementById('modalConfirmWord');
+        const modalConfirmInput = document.getElementById('modalConfirmInput');
+        const modalConfirmBtn = document.getElementById('modalConfirm');
+        const modalCancelBtn = document.getElementById('modalCancel');
+        let pendingAction = null;
+
+        function openModal(action) {
+            pendingAction = action;
+            modalPassword.value = '';
+            modalConfirmInput.value = '';
+            modalConfirmBtn.disabled = true;
+            modalConfirmBtn.style.background = 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
+            modalConfirmBtn.style.cursor = 'not-allowed';
+            if (action === 'reboot') {
+                modalTitle.textContent = '♻️ Reiniciar el servidor';
+                modalWarning.textContent = 'El servidor se reiniciará y estará fuera de línea unos minutos. El dashboard y el gateway volverán solos al terminar.';
+                modalHoursRow.classList.add('hidden');
+                modalConfirmWord.textContent = 'REINICIAR';
+            } else {
+                modalTitle.textContent = '⏻ Apagar el servidor';
+                modalWarning.textContent = 'El servidor se apagará por completo y se programará su encendido automático (RTC) a la hora elegida.';
+                modalHoursRow.classList.remove('hidden');
+                modalConfirmWord.textContent = 'APAGAR';
+            }
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            pendingAction = null;
+        }
+
+        function checkModalValid() {
+            const word = pendingAction === 'reboot' ? 'REINICIAR' : 'APAGAR';
+            const valid = modalConfirmInput.value === word && modalPassword.value.length > 0;
+            modalConfirmBtn.disabled = !valid;
+            modalConfirmBtn.style.background = valid ? 'var(--status-critical)' : 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
+            modalConfirmBtn.style.cursor = valid ? 'pointer' : 'not-allowed';
+        }
+        modalConfirmInput.addEventListener('input', checkModalValid);
+        modalPassword.addEventListener('input', checkModalValid);
+        modalCancelBtn.addEventListener('click', closeModal);
+
+        modalConfirmBtn.addEventListener('click', async () => {
+            const action = pendingAction;
+            const body = { password: modalPassword.value };
+            if (action === 'shutdown') body.hours = Number(modalHours.value);
+            closeModal();
+            await callAction(action, body);
+        });
+
+        document.querySelectorAll('[data-action]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.dataset.action;
+                if (action === 'reboot' || action === 'shutdown') {
+                    openModal(action);
+                } else if (action === 'restart-openclaw') {
+                    if (confirm('¿Reiniciar el gateway de OpenClaw ahora? Se interrumpirán conversaciones en curso brevemente.')) callAction(action);
+                } else if (action === 'free-ram') {
+                    callAction(action);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NexoDashboard — Acceso</title>
+<link rel="stylesheet" href="/theme.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; align-items: center; justify-content: center; }
+  .login-card { width: 320px; padding: 36px 32px; }
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .brand-badge {
+    width: 38px; height: 38px; border-radius: 11px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .brand-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .brand-sub { font-size: 12px; color: var(--ink-muted); margin: 2px 0 24px; }
+  .field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink-muted); display: block; margin-bottom: 6px; }
+  input[type="password"] {
+    width: 100%; background: var(--surface-raised); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 13px; color: var(--ink); font-size: 14px;
+    font-family: inherit; transition: border-color 0.15s;
+  }
+  input[type="password"]:focus { outline: none; border-color: var(--accent); }
+  .submit-btn {
+    width: 100%; margin-top: 18px; padding: 11px; border: none; border-radius: 10px;
+    font-weight: 600; font-size: 13px; letter-spacing: 0.02em; cursor: pointer;
+    font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .err { color: var(--status-critical); font-size: 12px; margin-top: 12px; min-height: 14px; text-align: center; }
+</style>
+</head>
+<body>
+  <form class="card login-card" id="loginForm">
+    <div class="brand">
+      <div class="brand-badge">🔗</div>
+      <div class="brand-title">NexoDashboard</div>
+    </div>
+    <p class="brand-sub">Acceso al panel de monitoreo</p>
+    <label class="field-label" for="password">Clave de acceso</label>
+    <input type="password" id="password" name="password" autofocus required autocomplete="current-password">
+    <button type="submit" class="submit-btn btn-primary" id="submitBtn">
+      <span id="btnLabel">Entrar</span>
+    </button>
+    <div class="err" id="err"></div>
+  </form>
+  <script>
+    const form = document.getElementById('loginForm');
+    const btn = document.getElementById('submitBtn');
+    const btnLabel = document.getElementById('btnLabel');
+    const errEl = document.getElementById('err');
+
+    function setLoading(loading) {
+      btn.disabled = loading;
+      btnLabel.innerHTML = loading ? '<span class="spinner"></span> Verificando…' : 'Entrar';
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errEl.textContent = '';
+      setLoading(true);
+      try {
+        const r = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: document.getElementById('password').value }),
+        });
+        const data = await r.json();
+        if (data.ok) {
+          window.location.href = '/';
+          return;
+        }
+        errEl.textContent = data.error || 'Clave incorrecta';
+      } catch {
+        errEl.textContent = 'Error de conexión';
+      }
+      setLoading(false);
+    });
+  </script>
+</body>
+</html>
