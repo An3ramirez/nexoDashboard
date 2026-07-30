@@ -21,6 +21,12 @@
         .metric-chip[data-tint="gw"]   { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
         .stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
         input[type="range"] { accent-color: var(--accent); height: 4px; }
+        .eye-toggle-btn {
+            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+            background: none; border: none; cursor: pointer; color: var(--ink-muted);
+            padding: 4px; display: flex; align-items: center; border-radius: 6px;
+        }
+        .eye-toggle-btn:hover { color: var(--ink-secondary); }
         .volume-vertical-wrap { width: 28px; height: 84px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
         .volume-vertical { width: 84px; height: 24px; transform: rotate(-90deg); margin: 0; }
         table.data-table { width: 100%; font-size: 12.5px; }
@@ -44,6 +50,7 @@
             </div>
             <div class="flex items-center gap-4 text-xs text-white/35">
                 <span id="pingTag">Ping: --</span>
+                <button id="openChangePassBtn" class="btn-action rounded-lg px-3 py-1.5 text-xs font-semibold">🔑 Cambiar clave</button>
                 <button id="logoutBtn" class="btn-action rounded-lg px-3 py-1.5 text-xs font-semibold">Salir</button>
             </div>
         </header>
@@ -89,10 +96,16 @@
                 </div>
             </div>
 
-            <div id="bluetoothInfo" class="hidden items-center gap-2 mt-3 pt-3 border-t border-white/5 text-[10px] text-white/35">
-                <span>🔵</span>
-                <span data-value="btName">--</span>
-                <span data-value="btBattery"></span>
+            <div id="bluetoothInfo" class="hidden items-center gap-3 mt-4 pt-4 border-t border-white/10">
+                <div class="icon-chip" style="width:38px;height:38px;font-size:17px;background:color-mix(in srgb, #38bdf8 18%, transparent);color:#38bdf8;flex-shrink:0;">🔵</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-bold text-white truncate" data-value="btName">--</div>
+                    <div class="text-xs text-white/40">Parlante Bluetooth</div>
+                </div>
+                <div class="text-right flex-shrink-0" data-value="btBatteryWrap">
+                    <div class="text-xl font-bold" data-value="btBatteryPct">--</div>
+                    <div class="text-[10px] text-white/30 uppercase tracking-wider">batería</div>
+                </div>
             </div>
 
             <button id="queueToggle" class="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/5 text-[10px] text-white/40 hover:text-white/60 uppercase font-bold tracking-wider w-full">
@@ -245,22 +258,6 @@
             <div id="actionResult" class="text-xs mt-4 min-h-[16px] text-white/40"></div>
         </div>
 
-        <!-- Cambiar Clave de Acceso -->
-        <div class="card p-6 mb-4">
-            <div class="label mb-4">🔑 Cambiar Clave de Acceso</div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input type="password" id="curPass" placeholder="Clave actual" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
-                <input type="password" id="newPass" placeholder="Clave nueva (mín. 8 caracteres)" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
-                <input type="password" id="newPass2" placeholder="Confirmar clave nueva" class="bg-white/5 border border-white/10 rounded-lg p-2.5 text-sm text-white">
-            </div>
-            <div class="flex items-center gap-3 mt-3">
-                <button id="changePassBtn" class="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-2">
-                    <span id="changePassLabel">Actualizar clave</span>
-                </button>
-                <div id="changePassResult" class="text-xs min-h-[16px]"></div>
-            </div>
-        </div>
-
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
             <!-- Sesiones Activas -->
             <div class="card p-6">
@@ -301,6 +298,41 @@
             <div class="flex gap-2">
                 <button id="modalCancel" class="flex-1 btn-action rounded-xl p-2.5 text-xs font-semibold">Cancelar</button>
                 <button id="modalConfirm" disabled class="flex-1 rounded-xl p-2.5 text-xs font-bold text-white" style="background:color-mix(in srgb, var(--status-critical) 55%, transparent)">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Cambiar Clave -->
+    <div id="changePassModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4">
+        <div class="card-raised rounded-2xl p-6 w-full max-w-sm">
+            <h3 class="text-sm font-bold text-white mb-4">🔑 Cambiar Clave de Acceso</h3>
+            <label class="label block mb-1.5">Clave actual</label>
+            <div class="relative mb-3">
+                <input type="password" id="curPass" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+                <button type="button" class="eye-toggle-btn" data-target="curPass" tabindex="-1" aria-label="Mostrar contraseña">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+            </div>
+            <label class="label block mb-1.5">Clave nueva (mín. 8 caracteres)</label>
+            <div class="relative mb-3">
+                <input type="password" id="newPass" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+                <button type="button" class="eye-toggle-btn" data-target="newPass" tabindex="-1" aria-label="Mostrar contraseña">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+            </div>
+            <label class="label block mb-1.5">Confirmar clave nueva</label>
+            <div class="relative mb-4">
+                <input type="password" id="newPass2" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+                <button type="button" class="eye-toggle-btn" data-target="newPass2" tabindex="-1" aria-label="Mostrar contraseña">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+            </div>
+            <div id="changePassResult" class="text-xs mb-3 min-h-[16px]"></div>
+            <div class="flex gap-2">
+                <button id="changePassCancel" class="flex-1 btn-action rounded-xl p-2.5 text-xs font-semibold">Cancelar</button>
+                <button id="changePassBtn" class="flex-1 btn-primary rounded-xl p-2.5 text-xs font-bold inline-flex items-center justify-center gap-2">
+                    <span id="changePassLabel">Actualizar</span>
+                </button>
             </div>
         </div>
     </div>
@@ -371,7 +403,16 @@
                 btInfo.classList.remove('hidden');
                 btInfo.classList.add('flex');
                 document.querySelector('[data-value="btName"]').textContent = bt.name || 'Dispositivo Bluetooth';
-                document.querySelector('[data-value="btBattery"]').textContent = bt.battery != null ? `· 🔋 ${bt.battery}%` : '';
+                const battWrap = document.querySelector('[data-value="btBatteryWrap"]');
+                const battEl = document.querySelector('[data-value="btBatteryPct"]');
+                if (bt.battery != null) {
+                    battWrap.style.display = '';
+                    battEl.textContent = bt.battery + '%';
+                    battEl.classList.remove('status-good', 'status-warning', 'status-critical');
+                    battEl.classList.add(`status-${statusLevel(100 - bt.battery, 70, 85)}`);
+                } else {
+                    battWrap.style.display = 'none';
+                }
             } else {
                 btInfo.classList.add('hidden');
                 btInfo.classList.remove('flex');
@@ -640,7 +681,40 @@
             window.location.href = '/login';
         });
 
-        // ===== Cambiar clave =====
+        // ===== Cambiar clave (modal) =====
+        const EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle>';
+        const EYE_OFF = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a19.76 19.76 0 0 1 4.22-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a19.65 19.65 0 0 1-2.29 3.31M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
+        document.querySelectorAll('.eye-toggle-btn').forEach((btn) => {
+            const input = document.getElementById(btn.dataset.target);
+            const icon = btn.querySelector('svg');
+            btn.addEventListener('click', () => {
+                const showing = input.type === 'text';
+                input.type = showing ? 'password' : 'text';
+                icon.innerHTML = showing ? EYE_OPEN : EYE_OFF;
+                btn.setAttribute('aria-label', showing ? 'Mostrar contraseña' : 'Ocultar contraseña');
+            });
+        });
+
+        const changePassModal = document.getElementById('changePassModal');
+        function resetChangePassModal() {
+            ['curPass', 'newPass', 'newPass2'].forEach((id) => {
+                const input = document.getElementById(id);
+                input.value = '';
+                input.type = 'password';
+            });
+            document.querySelectorAll('.eye-toggle-btn svg').forEach((icon) => { icon.innerHTML = EYE_OPEN; });
+            document.getElementById('changePassResult').textContent = '';
+        }
+        document.getElementById('openChangePassBtn').addEventListener('click', () => {
+            resetChangePassModal();
+            changePassModal.classList.remove('hidden');
+            changePassModal.classList.add('flex');
+        });
+        document.getElementById('changePassCancel').addEventListener('click', () => {
+            changePassModal.classList.add('hidden');
+            changePassModal.classList.remove('flex');
+        });
+
         document.getElementById('changePassBtn').addEventListener('click', async () => {
             const curPass = document.getElementById('curPass');
             const newPass = document.getElementById('newPass');
@@ -677,7 +751,7 @@
                 resultEl.textContent = 'Error de conexión';
             }
             btn.disabled = false;
-            label.textContent = 'Actualizar clave';
+            label.textContent = 'Actualizar';
         });
 
         // ===== Acciones del servidor =====
