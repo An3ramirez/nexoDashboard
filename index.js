@@ -10,21 +10,80 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 'loopback');
+
+// Cabeceras de seguridad base. No se pone CSP aquí porque el frontend carga
+// Tailwind desde su CDN (script inline + eval de la JIT); ver nota en
+// index.html. Estas cuatro son seguras para las rutas propias y para el
+// proxy de /oc-panel.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // CSP solo para las páginas propias: /oc-panel es el proxy a la Control UI de
+  // OpenClaw, que trae su propio bundle y necesita su política. Los scripts
+  // inline se movieron a /dashboard.js y /login.js, y Tailwind se compila a
+  // /tailwind.css, así que script-src puede ser 'self' sin unsafe-*.
+  if (!req.path.startsWith('/oc-panel')) {
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'self'",
+      "script-src 'self'",
+      // Los atributos style="..." y el <style> del propio autor siguen siendo
+      // inline; no hay inyección de estilos desde datos de usuario.
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "connect-src 'self' ws: wss:",
+      "font-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'self'",
+    ].join('; '));
+  }
+  next();
+});
 const server = http.createServer(app);
 const io = new Server(server);
 
 // La clave vive en un archivo aparte (no en el código) para que se pueda
 // cambiar desde el propio dashboard sin editar índex.js ni reiniciar nada.
 const AUTH_STORE_PATH = path.join(__dirname, 'auth.json');
-function loadOCKey() {
-  try {
-    return JSON.parse(fs.readFileSync(AUTH_STORE_PATH, 'utf8')).password;
-  } catch {
-    return 'z7xs3kGh7qKcTN4ADyEiDB';
-  }
+
+// Falla cerrado: sin un auth.json utilizable el dashboard NO arranca. Antes
+// caía a una clave fija escrita aquí, así que si el archivo se perdía el panel
+// quedaba accesible con una clave conocida. Se acepta el formato nuevo
+// {salt, hash} y, para migrar, el viejo {password} en claro (se convierte y se
+// reescribe el archivo).
+function hashPassword(password, salt) {
+  return crypto.pbkdf2Sync(password, salt, 210000, 32, 'sha256').toString('hex');
 }
-let OC_KEY = loadOCKey();
+function loadAuth() {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(AUTH_STORE_PATH, 'utf8'));
+  } catch {
+    console.error(`[auth] Falta o es inválido ${AUTH_STORE_PATH}; configura una clave antes de arrancar.`);
+    process.exit(1);
+  }
+  if (raw && typeof raw.salt === 'string' && typeof raw.hash === 'string') return raw;
+  if (raw && typeof raw.password === 'string' && raw.password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const store = { salt, hash: hashPassword(raw.password, salt) };
+    fs.writeFileSync(AUTH_STORE_PATH, JSON.stringify(store), { mode: 0o600 });
+    return store;
+  }
+  console.error(`[auth] ${AUTH_STORE_PATH} no contiene una clave utilizable.`);
+  process.exit(1);
+}
+let authStore = loadAuth();
+function verifyPassword(password) {
+  if (typeof password !== 'string') return false;
+  const candidate = Buffer.from(hashPassword(password, authStore.salt), 'hex');
+  const expected = Buffer.from(authStore.hash, 'hex');
+  return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+}
 const ocTokens = new Map();
 const OC_PANEL_TARGET = 'http://127.0.0.1:18789';
 const OC_CONFIG_PATH = '/home/andres/.openclaw/openclaw.json';
@@ -61,6 +120,44 @@ function getCookie(req, name) {
 // relativa a esa raíz.
 app.get('/login', (req, res) => res.sendFile('login.html', { root: path.join(__dirname, 'public') }));
 app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(__dirname, 'public') }));
+// Tailwind compilado y los scripts extraídos: son estáticos, sin datos, y los
+// necesita el navegador ANTES de tener sesión (la página de login usa CSS y JS).
+// Sin estas rutas quedaban detrás de requireDashAuth y el navegador recibía un
+// 302 al propio /login: ni los estilos ni el JS cargaban.
+app.get('/tailwind.css', (req, res) => res.sendFile('tailwind.css', { root: path.join(__dirname, 'public') }));
+app.get('/dashboard.js', (req, res) => res.sendFile('dashboard.js', { root: path.join(__dirname, 'public') }));
+app.get('/login.js', (req, res) => res.sendFile('login.js', { root: path.join(__dirname, 'public') }));
+app.get('/favicon.svg', (req, res) => res.sendFile('favicon.svg', { root: path.join(__dirname, 'public') }));
+
+// ===== Salud del propio dashboard =====
+// Para que el servicio pueda avisar cuando se rompe: si el proceso está vivo
+// pero el último poll falla, /health lo delata. Si el proceso muere, deja de
+// responder y el job de alertas lo detecta por HTTP.
+
+// Pública a propósito: la consulta el job de alertas, que corre fuera del
+// navegador y sin sesión (detrás de requireDashAuth daría 401 y el chequeo
+// nunca vería un fallo). No expone datos: solo estado y edades.
+let lastSysOkAtMs = 0;
+let lastGatewayOkAtMs = 0;
+app.get('/health', (req, res) => {
+    const now = Date.now();
+    const ageSys = lastSysOkAtMs ? now - lastSysOkAtMs : null;
+    const ageGw = lastGatewayOkAtMs ? now - lastGatewayOkAtMs : null;
+    // El sondeo rápido solo corre cuando hay un cliente conectado (para no
+    // gastar CPU en vacío). Sin clientes, el proceso sano NO debe dar 503:
+    // solo se exige muestra fresca cuando de verdad hay alguien mirando.
+    const hasClients = clientCount > 0;
+    const freshEnough = ageSys !== null && ageSys < 60000;
+    const healthy = process.uptime() > 2 && (!hasClients || freshEnough);
+    res.status(healthy ? 200 : 503).json({
+        ok: healthy,
+        uptimeSec: Math.round(process.uptime()),
+        clients: clientCount,
+        lastSysSampleAgoSec: ageSys === null ? null : Math.round(ageSys / 1000),
+        lastGatewayOkAgoSec: ageGw === null ? null : Math.round(ageGw / 1000),
+        gatewayOk: ocStatusCache?.gatewayOk === true,
+    });
+});
 
 // Rate limit del login: 5 intentos fallidos por IP, luego bloqueo de 15 min.
 // Sin esto, la clave (por fuerte que sea) queda expuesta a fuerza bruta desde
@@ -82,7 +179,7 @@ app.post('/api/login', express.json(), (req, res) => {
     const waitMin = Math.ceil((LOGIN_WINDOW_MS - (now - attempt.firstAt)) / 60000);
     return res.status(429).json({ ok: false, error: `Demasiados intentos. Espera ${waitMin} min.` });
   }
-  if (req.body?.password !== OC_KEY) {
+  if (!verifyPassword(req.body?.password)) {
     if (!attempt || (now - attempt.firstAt) > LOGIN_WINDOW_MS) loginAttempts.set(ip, { count: 1, firstAt: now });
     else attempt.count++;
     return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
@@ -120,18 +217,23 @@ app.use(requireDashAuth);
 
 app.post('/api/change-password', express.json(), (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (currentPassword !== OC_KEY) {
+  if (!verifyPassword(currentPassword)) {
     return res.status(403).json({ ok: false, error: 'Clave actual incorrecta' });
   }
   if (typeof newPassword !== 'string' || newPassword.length < 8) {
     return res.status(400).json({ ok: false, error: 'La clave nueva debe tener al menos 8 caracteres' });
   }
-  OC_KEY = newPassword;
+  const salt = crypto.randomBytes(16).toString('hex');
+  authStore = { salt, hash: hashPassword(newPassword, salt) };
   try {
-    fs.writeFileSync(AUTH_STORE_PATH, JSON.stringify({ password: newPassword }), { mode: 0o600 });
+    fs.writeFileSync(AUTH_STORE_PATH, JSON.stringify(authStore), { mode: 0o600 });
   } catch (e) {
     return res.status(500).json({ ok: false, error: 'No se pudo guardar la clave nueva' });
   }
+  // Rotar la clave invalida todo lo emitido con la anterior: sesiones del
+  // dashboard (hasta 24 h) y sesiones del panel de OpenClaw.
+  dashSessions.clear();
+  ocTokens.clear();
   res.json({ ok: true });
 });
 
@@ -155,6 +257,7 @@ app.get('/api/stats', (req, res) => {
         gatewayLogs: gatewayLogsCache,
         player: playerCache,
         bluetooth: bluetoothCache,
+        history: { short: shortHistory, daily: dailyHistory },
         pollingActive: clientCount > 0,
     });
 });
@@ -192,13 +295,18 @@ function requireOCPanelAuth(req, res, next) {
   next();
 }
 
+// La Control UI de OpenClaw genera URLs absolutas contra su basePath
+// ("/oc-panel/assets/...", "/oc-panel/control-ui-config.json", y el WebSocket
+// bajo "/oc-panel"). Por eso NO se recorta el prefijo: se reenvía tal cual y el
+// Gateway lo sirve con gateway.controlUi.basePath = "/oc-panel".
 const ocPanelProxy = createProxyMiddleware({
   target: OC_PANEL_TARGET,
   changeOrigin: true,
   ws: true,
-  pathRewrite: { '^/oc-panel': '' },
+  pathFilter: (pathname) => pathname === '/oc-panel' || pathname.startsWith('/oc-panel/'),
 });
-app.use('/oc-panel', requireOCPanelAuth, ocPanelProxy);
+app.use('/oc-panel', requireOCPanelAuth);
+app.use(ocPanelProxy);
 
 // Los eventos 'upgrade' (WebSocket) no pasan por el pipeline de middleware de
 // Express — hay que engancharlos aparte y repetir la validación de auth a mano
@@ -235,19 +343,38 @@ app.post('/api/actions/restart-openclaw', express.json(), async (req, res) => {
 
 app.post('/api/actions/free-ram', express.json(), async (req, res) => {
   const before = sysCache?.memAvailGB ?? null;
-  const r = await runCmd('sudo', ['sh', '-c', 'sync; echo 1 > /proc/sys/vm/drop_caches']);
+  // Sin `sh -c`: solo estas dos órdenes concretas están en sudoers, así que
+  // no queda un shell con privilegios ejecutando texto.
+  await runCmd('sync');
+  const r = await runCmd('sudo', ['/usr/sbin/sysctl', '-w', 'vm.drop_caches=1']);
   const sys = await getSysStats();
   res.json({ ...r, beforeGB: before, afterGB: sys.memAvailGB ?? null });
 });
 
+app.post('/api/actions/free-swap', express.json(), async (req, res) => {
+  const beforeMiB = Math.round((sysCache?.swapUsedMB ?? 0));
+  const off = await runCmd('sudo', ['/sbin/swapoff', '-a'], { timeout: 60000 });
+  const on = await runCmd('sudo', ['/sbin/swapon', '-a'], { timeout: 60000 });
+  const r = off.ok && on.ok ? on : { ok: false, error: off.error || on.error };
+  const sys = await getSysStats();
+  const afterMiB = Math.round((sys.swapUsedMB ?? 0));
+  res.json({ ...r, beforeMiB, afterMiB });
+});
+
+app.post('/api/actions/doctor-fix', express.json(), async (req, res) => {
+  const r = await runCmd('openclaw', ['doctor', '--fix'], { env: XDG_ENV, timeout: 120000 });
+  if (r.ok) { ocFailures.status = undefined; delete ocFailures.status; }
+  res.json(r);
+});
+
 app.post('/api/actions/reboot', express.json(), async (req, res) => {
-  if (req.body?.password !== OC_KEY) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
+  if (!verifyPassword(req.body?.password)) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
   res.json({ ok: true, message: 'Reiniciando el servidor…' });
   setTimeout(() => execFile('sudo', ['reboot'], () => {}), 1500);
 });
 
 app.post('/api/actions/shutdown', express.json(), async (req, res) => {
-  if (req.body?.password !== OC_KEY) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
+  if (!verifyPassword(req.body?.password)) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
   const hours = Math.min(24, Math.max(1, Number(req.body?.hours) || 1));
   const wakeAt = Math.floor(Date.now() / 1000) + hours * 3600;
   res.json({ ok: true, message: `Apagando — despertará en ${hours}h`, wakeAt });
@@ -670,6 +797,14 @@ function getGatewayLogs(timeoutMs = 5000) {
 
 // ===== Sistema =====
 const HISTORY_LEN = 30;
+// Historial largo para las gráficas: muestras de 2 s durante 1 h y de 60 s
+// durante 24 h. Antes solo había 30 puntos (≈1 min) y el sparkline no contaba
+// nada. Los buffers viven en memoria; al reiniciar el servicio se vacían.
+const SHORT_WINDOW_MS = 60 * 60 * 1000;
+const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+const shortHistory = [];   // { t, cpu, ram }
+const dailyHistory = [];   // { t, cpu, ram }
+let lastDailySampleMs = 0;
 let sysCache = null;
 let pingCache = null;
 let processesCache = [];
@@ -679,8 +814,145 @@ let gatewayLogsCache = [];
 let gatewayVersionCache = null;
 let playerCache = { ok: false };
 let bluetoothCache = { connected: false };
+let visitorsCache = { active: [], total: 0, windowSec: 0 };
 const memHistory = [];
 const cpuHistory = [];
+
+// ===== Visitantes en tiempo real (desde el access log de nginx) =====
+// El tráfico entra por Cloudflare Tunnel (cloudflared) → nginx, así que
+// $remote_addr siempre es 127.0.0.1. La IP real del visitante viene en el
+// header CF-Connecting-IP, que el log_format `main_cf` registra como
+// segundo campo (formato: remote|cfip|time|method|uri|status|ua).
+const NGINX_ACCESS_LOG = '/var/log/nginx/access.log';
+const VISITOR_WINDOW_MS = 5 * 60 * 1000; // se considera "activo" si tocó algo en los últimos 5 min
+const VISITOR_IDLE_MS = 60 * 1000; // si no hay actividad en 1 min, se marca como inactivo
+
+function parseNginxTime(t) {
+    // Formato: "02/Aug/2026:11:56:55 -0500"
+    const m = String(t).match(/(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return null;
+    const MONTHS = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+    const mo = MONTHS[m[2]];
+    if (mo === undefined) return null;
+    return new Date(Number(m[3]), mo, Number(m[1]), Number(m[4]), Number(m[5]), Number(m[6])).getTime();
+}
+
+function parseUserAgent(ua) {
+    const s = String(ua || '');
+    let device = 'Desconocido';
+    let browser = '';
+    if (/iPhone|iPad|iPod/.test(s)) device = '📱 iOS';
+    else if (/Android/.test(s)) device = /Mobile/.test(s) ? '📱 Android' : '📱 Android Tablet';
+    else if (/Windows/.test(s)) device = '💻 Windows';
+    else if (/Macintosh|Mac OS X/.test(s)) device = '💻 macOS';
+    else if (/Linux/.test(s)) device = '🐧 Linux';
+    else if (/curl|wget|python|Go-http|bot|spider|crawl/i.test(s)) device = '🤖 Bot';
+    if (/Chrome\/([\d.]+)/.test(s)) browser = 'Chrome ' + s.match(/Chrome\/([\d.]+)/)[1];
+    else if (/Firefox\/([\d.]+)/.test(s)) browser = 'Firefox ' + s.match(/Firefox\/([\d.]+)/)[1];
+    else if (/Safari\/([\d.]+)/.test(s) && !/Chrome/.test(s)) browser = 'Safari';
+    else if (/Edg\/([\d.]+)/.test(s)) browser = 'Edge ' + s.match(/Edg\/([\d.]+)/)[1];
+    else if (/curl\/([\d.]+)/.test(s)) browser = 'curl ' + s.match(/curl\/([\d.]+)/)[1];
+    return { device, browser };
+}
+
+function readAccessLogTail(maxBytes = 4 * 1024 * 1024) {
+    try {
+        const fd = fs.openSync(NGINX_ACCESS_LOG, 'r');
+        const stat = fs.fstatSync(fd);
+        const size = stat.size;
+        const start = Math.max(0, size - maxBytes);
+        const buf = Buffer.alloc(size - start);
+        fs.readSync(fd, buf, 0, buf.length, start);
+        fs.closeSync(fd);
+        // Cortar en el primer salto de línea para no partir una línea a la mitad
+        let text = buf.toString('utf8');
+        const firstNl = text.indexOf('\n');
+        if (firstNl > 0) text = text.slice(firstNl + 1);
+        return text;
+    } catch {
+        return '';
+    }
+}
+
+async function getVisitors() {
+    const now = Date.now();
+    const byIp = new Map();
+    try {
+        const text = readAccessLogTail();
+        const lines = text.split('\n');
+        for (const line of lines) {
+            if (!line.trim()) continue;
+            // Formato nuevo: remote|cfip|time|method|uri|status|ua
+            const parts = line.split('|');
+            let ip = null, ts = null, method = null, uri = null, status = null, ua = null;
+            if (parts.length >= 7) {
+                ip = (parts[1] || '').trim();
+                ts = parseNginxTime(parts[2]);
+                method = parts[3];
+                uri = parts[4];
+                status = parts[5];
+                ua = parts.slice(6).join('|');
+            } else {
+                // Formato viejo (combinado): 127.0.0.1 - - [ts] "GET /x HTTP/1.1" 200 n "ref" "ua"
+                const m = line.match(/^([\d.]+) - - \[([^\]]+)\] "(\w+) ([^ ]+)/);
+                if (!m) continue;
+                ip = m[1];
+                ts = parseNginxTime(m[2]);
+                method = m[3];
+                uri = m[4];
+                const uaMatch = line.match(/"([^"]*)"$/);
+                ua = uaMatch ? uaMatch[1] : '';
+                status = null;
+            }
+            if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') continue;
+            if (!ts || now - ts > VISITOR_WINDOW_MS) continue;
+            const rec = byIp.get(ip) || { ip, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua };
+            rec.requests++;
+            if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; }
+            if (ts < rec.firstSeen) rec.firstSeen = ts;
+            byIp.set(ip, rec);
+        }
+    } catch {}
+    const active = Array.from(byIp.values())
+        .map(r => {
+            const { device, browser } = parseUserAgent(r.ua);
+            const idleMs = now - r.lastSeen;
+            return {
+                ip: r.ip,
+                device,
+                browser,
+                requests: r.requests,
+                lastSeen: r.lastSeen,
+                lastUri: r.lastUri || '/',
+                lastStatus: r.lastStatus,
+                active: idleMs < VISITOR_IDLE_MS,
+                idleSec: Math.round(idleMs / 1000),
+            };
+        })
+        .sort((a, b) => b.lastSeen - a.lastSeen);
+    visitorsCache = {
+        active: active.filter(v => v.active),
+        total: active.length,
+        windowSec: VISITOR_WINDOW_MS / 1000,
+    };
+    return visitorsCache;
+}
+
+async function pollVisitors() {
+    await getVisitors();
+    io.emit('stats', { visitors: visitorsCache });
+}
+
+// Guarda una muestra en los dos buffers y descarta lo que salga de la ventana.
+function recordHistory(cpu, ram, now) {
+    shortHistory.push({ t: now, cpu, ram });
+    while (shortHistory.length && now - shortHistory[0].t > SHORT_WINDOW_MS) shortHistory.shift();
+    if (now - lastDailySampleMs >= 60000) {
+        lastDailySampleMs = now;
+        dailyHistory.push({ t: now, cpu, ram });
+        while (dailyHistory.length && now - dailyHistory[0].t > DAILY_WINDOW_MS) dailyHistory.shift();
+    }
+}
 
 async function getSysStats() {
     try {
@@ -714,6 +986,7 @@ async function getSysStats() {
             memAvailGB: memAvailKB ? Number((memAvailKB * 1024 / 1024 ** 3).toFixed(1)) : null,
             memAvailPct: memAvailPct !== null ? Number(memAvailPct.toFixed(1)) : null,
             swapUsedPct: swapUsedPct !== null ? Number(swapUsedPct.toFixed(1)) : null,
+            swapUsedMB: (swapTotalKB && swapFreeKB) ? Math.round((swapTotalKB - swapFreeKB) / 1024) : 0,
             diskUsedPct: rootFs ? Number(rootFs.use.toFixed(1)) : null,
             diskUsedGB: rootFs ? Number((rootFs.used / 1e9).toFixed(1)) : null,
             diskTotalGB: rootFs ? Number((rootFs.size / 1e9).toFixed(1)) : null,
@@ -724,10 +997,12 @@ async function getSysStats() {
             osDistro: osInfo.distro,
         };
         sysCache = stats;
+        lastSysOkAtMs = Date.now();
         cpuHistory.push(stats.cpu);
         if (cpuHistory.length > HISTORY_LEN) cpuHistory.shift();
         memHistory.push(memUsedPct);
         if (memHistory.length > HISTORY_LEN) memHistory.shift();
+        recordHistory(stats.cpu, memUsedPct, Date.now());
         return stats;
     } catch {
         return sysCache || {};
@@ -774,6 +1049,7 @@ async function pollGateway() {
         gatewayOk: health.ok,
         healthLatencyMs: health.latencyMs,
     };
+    if (health.ok) lastGatewayOkAtMs = Date.now();
     io.emit('stats', { oc: buildOCPayload(), models: getModels() });
 }
 
@@ -821,7 +1097,7 @@ async function pollPing() {
 
 // ===== Poll global (una sola vez para todos los clientes conectados) =====
 let clientCount = 0;
-let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null;
+let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null, ivVisitors = null;
 
 function startPolling() {
     if (ivFast) return;
@@ -829,7 +1105,7 @@ function startPolling() {
         const sys = await getSysStats();
         const player = await getPlayerStatus();
         playerCache = player;
-        io.emit('stats', { sys, memHistory, cpuHistory, player });
+        io.emit('stats', { sys, memHistory, cpuHistory, player, history: { short: shortHistory, daily: dailyHistory } });
     }, 2000);
     ivProcs = setInterval(async () => {
         const processes = await getTopProcesses();
@@ -839,6 +1115,7 @@ function startPolling() {
     ivGatewayLogs = setInterval(pollGatewayLogs, 20000);
     ivSessions = setInterval(pollSessions, 90000);
     ivPing = setInterval(pollPing, 10000);
+    ivVisitors = setInterval(pollVisitors, 5000);
     ivBluetooth = setInterval(async () => {
         bluetoothCache = await getBluetoothInfo();
         io.emit('stats', { bluetooth: bluetoothCache });
@@ -851,13 +1128,14 @@ function startPolling() {
     pollGatewayLogs();
     pollSessions();
     pollPing();
+    pollVisitors();
 }
 
 function stopPolling() {
     clearInterval(ivFast); clearInterval(ivProcs); clearInterval(ivGateway);
     clearInterval(ivGatewayLogs); clearInterval(ivSessions); clearInterval(ivPing);
-    clearInterval(ivBluetooth);
-    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = null;
+    clearInterval(ivBluetooth); clearInterval(ivVisitors);
+    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = ivVisitors = null;
 }
 
 io.on('connection', (socket) => {
@@ -867,6 +1145,7 @@ io.on('connection', (socket) => {
   socket.emit('stats', {
       sys: sysCache || {},
       memHistory, cpuHistory,
+      history: { short: shortHistory, daily: dailyHistory },
       processes: processesCache,
       oc: buildOCPayload(),
       models: getModels(),
@@ -874,6 +1153,7 @@ io.on('connection', (socket) => {
       gatewayLogs: gatewayLogsCache,
       player: playerCache,
       bluetooth: bluetoothCache,
+      visitors: visitorsCache,
   });
 
   socket.on('disconnect', () => {
