@@ -920,8 +920,9 @@ async function getVisitors() {
             const parts = line.split('|');
             let ip = null, ts = null, method = null, uri = null, status = null, ua = null, host = '';
             if (parts.length >= 8) {
-                host = (parts[0] || '').trim();
-                ip = (parts[2] || '').trim();
+                // nginx (main_cf): remote_addr|cf_connecting_ip|host|time|method|uri|status|ua
+                ip = (parts[1] || '').trim();
+                host = (parts[2] || '').trim();
                 ts = parseNginxTime(parts[3]);
                 method = parts[4];
                 uri = parts[5];
