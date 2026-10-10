@@ -3,376 +3,392 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="NexoDashboard — panel de monitoreo del servidor">
     <title>NexoDashboard</title>
     <link rel="stylesheet" href="/tailwind.css">
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="/socket.io/socket.io.js" defer></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="/theme.css">
-    <style>
-        .brand-badge {
-            width: 34px; height: 34px; border-radius: 10px;
-            background: linear-gradient(135deg, var(--accent), var(--accent-2));
-            display: flex; align-items: center; justify-content: center; font-size: 16px;
-        }
-        .metric-chip[data-tint="cpu"]  { background: color-mix(in srgb, var(--series-cpu) 16%, transparent); color: var(--series-cpu); }
-        .metric-chip[data-tint="ram"]  { background: color-mix(in srgb, var(--series-ram) 16%, transparent); color: var(--series-ram); }
-        .metric-chip[data-tint="disk"] { background: color-mix(in srgb, var(--series-disk) 16%, transparent); color: var(--series-disk); }
-        .metric-chip[data-tint="net"]  { background: color-mix(in srgb, var(--series-net) 16%, transparent); color: var(--series-net); }
-        .metric-chip[data-tint="gw"]   { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent-2); }
-        .stat-value { font-size: 26px; font-weight: 700; line-height: 1.1; }
-        input[type="range"] { accent-color: var(--accent); height: 4px; }
-        .eye-toggle-btn {
-            position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-            background: none; border: none; cursor: pointer; color: var(--ink-muted);
-            padding: 4px; display: flex; align-items: center; border-radius: 6px;
-        }
-        .eye-toggle-btn:hover { color: var(--ink-secondary); }
-        .volume-vertical-wrap { width: 28px; height: 84px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-        .volume-vertical { width: 84px; height: 24px; transform: rotate(-90deg); margin: 0; }
-        table.data-table { width: 100%; font-size: 12.5px; }
-        table.data-table th { text-align: left; padding-bottom: 8px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-muted); border-bottom: 1px solid var(--border); }
-        table.data-table td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--border); color: var(--ink-secondary); }
-        table.data-table tr:hover td { background: rgba(255,255,255,0.02); }
-        table.data-table tr:last-child td { border-bottom: none; }
-        .pill { font-size: 10.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); }
-        .range-btn { background: transparent; border: none; color: var(--ink-muted); cursor: pointer; font-family: inherit; }
-        .range-btn:hover { color: var(--ink-secondary); }
-        .range-btn-active { background: var(--accent); color: #fff; }
-    </style>
 </head>
-<body class="p-4 md:p-8 antialiased">
-    <div class="max-w-7xl mx-auto">
-        <header class="flex items-center justify-between mb-8">
-            <div class="flex items-center gap-3">
-                <div class="brand-badge">🔗</div>
-                <div>
-                    <div class="text-sm font-bold text-white leading-tight">NexoDashboard</div>
-                    <div class="text-xs text-white/35" id="hostnameTag">--</div>
+<body class="antialiased">
+    <!-- ══════════ Barra superior ══════════ -->
+    <header class="topbar">
+        <div class="max-w-6xl mx-auto px-4 py-2.5 flex items-center gap-3 flex-wrap">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <div class="brand-badge" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 </div>
-                <span id="serverBadge" class="pill">● --</span>
+                <div class="min-w-0">
+                    <div class="text-sm font-bold leading-tight truncate">NexoDashboard</div>
+                    <div class="text-[11px] faint truncate" id="hostnameTag">--</div>
+                </div>
+                <span id="serverBadge" class="pill ml-1">● --</span>
             </div>
-            <div class="flex items-center gap-4 text-xs text-white/35">
-                <span id="pingTag">Ping: --</span>
-                <div id="rangeToggle" class="hidden sm:flex items-center rounded-lg overflow-hidden" style="border:1px solid var(--border)">
+            <div class="flex items-center gap-2 ml-auto flex-wrap">
+                <span class="pill" title="Latencia hacia el servidor"><span id="pingTag">Ping: --</span></span>
+                <div id="rangeToggle" class="seg" role="group" aria-label="Rango del historial">
                     <button type="button" data-range="short" class="range-btn px-2.5 py-1 text-[11px] font-semibold">1 h</button>
                     <button type="button" data-range="daily" class="range-btn px-2.5 py-1 text-[11px] font-semibold">24 h</button>
                 </div>
-                <button id="openChangePassBtn" class="btn-action rounded-lg px-3 py-1.5 text-xs font-semibold">🔑 Cambiar clave</button>
-                <button id="logoutBtn" class="btn-action rounded-lg px-3 py-1.5 text-xs font-semibold">Salir</button>
+                <button id="openChangePassBtn" class="btn-action icon-btn rounded-[10px] px-3 text-xs font-semibold" title="Cambiar clave de acceso">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="m10.85 12.15 8.5-8.5"/><path d="m18 5 2 2"/><path d="m15 8 2 2"/></svg>
+                    <span class="hidden sm:inline">Cambiar clave</span>
+                </button>
+                <button id="logoutBtn" class="btn-action icon-btn rounded-[10px] px-3 text-xs font-semibold" title="Cerrar sesión">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    <span class="hidden sm:inline">Salir</span>
+                </button>
             </div>
-        </header>
+        </div>
+    </header>
 
-        <!-- Reproductor de música (MPD -> Bluetooth) -->
-        <div class="card p-5 mb-4">
-            <div class="flex items-center gap-4 flex-wrap md:flex-nowrap">
-                <div style="position:relative;width:44px;height:44px;flex-shrink:0;">
-                    <div id="playerIcon" class="icon-chip metric-chip" data-tint="gw" style="width:44px;height:44px;font-size:20px;position:absolute;inset:0;">🎵</div>
-                    <img id="playerArt" alt="" style="width:44px;height:44px;border-radius:10px;object-fit:cover;position:absolute;inset:0;display:none;">
+    <main class="max-w-6xl mx-auto px-4 pt-5 pb-16">
+
+        <!-- ══════════ Reproductor (MPD → Bluetooth) ══════════ -->
+        <section class="card p-5 md:p-6 mb-4" aria-label="Reproductor de música">
+            <div class="flex items-start gap-4">
+                <div class="art-frame" style="width:64px;height:64px;">
+                    <div id="playerIcon" class="art-fallback">🎵</div>
+                    <img id="playerArt" alt="Carátula del álbum en reproducción">
                 </div>
-                <div class="flex-1 min-w-0 order-1 basis-full md:basis-auto md:order-none">
-                    <div class="text-sm font-bold text-white truncate" data-value="playerTitle">--</div>
-                    <div class="text-xs text-white/40 truncate" data-value="playerArtist">--</div>
-                    <div class="w-full h-1 rounded-full bg-white/10 mt-2 overflow-hidden">
-                        <div id="playerProgress" class="h-full rounded-full" style="width:0%;background:var(--accent)"></div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-[15px] font-bold truncate" data-value="playerTitle">--</h2>
+                        <span id="playerStatePill" class="pill hidden flex-shrink-0" style="font-size:10px;padding:2px 9px;">--</span>
                     </div>
-                    <div class="flex justify-between text-[10px] text-white/30 mt-1">
+                    <p class="text-xs muted truncate mt-0.5" data-value="playerArtist">--</p>
+                    <div class="track-progress mt-3" role="progressbar" aria-label="Progreso de la pista">
+                        <div id="playerProgress" style="width:0%"></div>
+                    </div>
+                    <div class="flex justify-between text-[11px] faint mt-1.5">
                         <span data-value="playerElapsed">0:00</span>
                         <span data-value="playerDuration">0:00</span>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 flex-shrink-0">
-                    <button id="playerPrev" class="btn-action rounded-full w-9 h-9 flex items-center justify-center text-sm">⏮</button>
-                    <button id="playerToggle" class="btn-primary rounded-full w-11 h-11 flex items-center justify-center text-lg">⏸</button>
-                    <button id="playerNext" class="btn-action rounded-full w-9 h-9 flex items-center justify-center text-sm">⏭</button>
-                </div>
-                <div class="hidden md:flex items-center gap-1.5 flex-shrink-0">
-                    <span class="text-xs">🔊</span>
-                    <button id="volDown" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs">−</button>
-                    <input type="range" id="playerVolume" min="0" max="100" value="60" class="w-24">
-                    <button id="volUp" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs">+</button>
-                    <span class="text-[10px] text-white/40 w-9 text-right" data-value="playerVolumeLabel">60%</span>
-                </div>
-                <button id="playerRandom" class="btn-action rounded-lg px-2.5 py-1.5 text-xs flex-shrink-0" title="Aleatorio">🔀</button>
-                <!-- Volumen vertical: solo en móvil, aprovecha el espacio libre a la derecha -->
-                <div class="flex md:hidden flex-col items-center gap-1 flex-shrink-0 ml-auto">
-                    <span class="text-xs">🔊</span>
-                    <div class="volume-vertical-wrap">
-                        <input type="range" id="playerVolumeMobile" min="0" max="100" value="60" class="volume-vertical">
+                <!-- Volumen escritorio -->
+                <div class="hidden md:flex flex-col items-end gap-1.5 flex-shrink-0 pt-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs faint" aria-hidden="true">🔊</span>
+                        <button id="volDown" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs font-bold" aria-label="Bajar volumen">−</button>
+                        <input type="range" id="playerVolume" min="0" max="100" value="60" class="slider w-24" aria-label="Volumen">
+                        <button id="volUp" class="btn-action rounded-lg w-6 h-6 flex items-center justify-center text-xs font-bold" aria-label="Subir volumen">+</button>
                     </div>
-                    <span class="text-[9px] text-white/40" data-value="playerVolumeLabelMobile">60%</span>
+                    <span class="text-[11px] faint" data-value="playerVolumeLabel">60%</span>
+                </div>
+                <!-- Volumen móvil (vertical) -->
+                <div class="flex md:hidden flex-col items-center gap-0.5 flex-shrink-0">
+                    <span class="text-[11px] faint" aria-hidden="true">🔊</span>
+                    <div class="volume-vertical-wrap">
+                        <input type="range" id="playerVolumeMobile" min="0" max="100" value="60" class="slider volume-vertical" aria-label="Volumen">
+                    </div>
+                    <span class="text-[10px] faint" data-value="playerVolumeLabelMobile">60%</span>
                 </div>
             </div>
 
-            <div id="bluetoothInfo" class="hidden items-center gap-3 mt-4 pt-4 border-t border-white/10">
-                <div class="icon-chip" style="width:38px;height:38px;font-size:17px;background:color-mix(in srgb, #38bdf8 18%, transparent);color:#38bdf8;flex-shrink:0;">🔵</div>
+            <div class="flex items-center gap-2.5 mt-4">
+                <button id="playerPrev" class="player-ctrl w-10 h-10 text-[15px]" aria-label="Pista anterior">⏮</button>
+                <button id="playerToggle" class="player-ctrl player-toggle w-[52px] h-[52px] text-xl" aria-label="Reproducir o pausar">⏸</button>
+                <button id="playerNext" class="player-ctrl w-10 h-10 text-[15px]" aria-label="Pista siguiente">⏭</button>
+                <button id="playerRandom" class="btn-action icon-btn px-3 h-10 text-xs font-semibold ml-1" title="Modo aleatorio" aria-label="Modo aleatorio" aria-pressed="false">🔀 <span class="hidden sm:inline">Aleatorio</span></button>
+            </div>
+
+            <div id="bluetoothInfo" class="hidden items-center gap-3 mt-4 pt-4" style="border-top:1px solid var(--border)">
+                <div class="icon-chip metric-chip" data-tint="bt" style="width:40px;height:40px;">🦷</div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-sm font-bold text-white truncate" data-value="btName">--</div>
-                    <div class="text-xs text-white/40">Parlante Bluetooth</div>
+                    <div class="text-sm font-bold truncate" data-value="btName">--</div>
+                    <div class="text-[11px] faint">Parlante Bluetooth</div>
                 </div>
-                <div class="text-right flex-shrink-0" data-value="btBatteryWrap">
-                    <div class="text-xl font-bold" data-value="btBatteryPct">--</div>
-                    <div class="text-[10px] text-white/30 uppercase tracking-wider">batería</div>
+                <div class="text-right flex-shrink-0 w-24" data-value="btBatteryWrap">
+                    <div class="text-lg font-extrabold leading-none" data-value="btBatteryPct">--</div>
+                    <div class="usage-track mt-1.5"><div id="btBatteryBar" style="width:0%;background:var(--status-good)"></div></div>
+                    <div class="text-[9px] faint uppercase tracking-widest mt-1">batería</div>
                 </div>
             </div>
 
-            <button id="queueToggle" class="flex items-center gap-1.5 mt-3 pt-3 border-t border-white/5 text-[10px] text-white/40 hover:text-white/60 uppercase font-bold tracking-wider w-full">
-                <span id="queueChevron">▶</span> Cola de reproducción
+            <button id="queueToggle" aria-expanded="false" class="flex items-center gap-2 mt-4 pt-3.5 text-[11px] muted hover:text-white uppercase font-bold tracking-widest w-full text-left" style="border-top:1px solid var(--border)">
+                <span id="queueChevron" aria-hidden="true">▶</span> Cola de reproducción
             </button>
-            <div id="queuePanel" class="hidden mt-2 max-h-64 overflow-y-auto space-y-0.5"></div>
-        </div>
+            <div id="queuePanel" class="hidden mt-2 max-h-64 overflow-y-auto"></div>
+        </section>
 
-        <!-- 4 Cards principales: CPU, RAM, Disco, Red -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-            <!-- CPU -->
-            <div class="card p-5">
-                <div class="flex items-center gap-2.5 mb-4">
-                    <div class="icon-chip metric-chip" data-tint="cpu">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+        <!-- ══════════ Métricas: CPU · RAM · Disco · Red ══════════ -->
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+            <section class="card p-5" aria-label="CPU">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="cpu" aria-hidden="true">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/></svg>
                     </div>
                     <span class="label">CPU</span>
+                    <span class="text-[11px] faint ml-auto" data-value="temp">🌡️ --</span>
                 </div>
                 <div class="stat-value" data-color="cpu">
-                    <span data-value="cpu" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                    <span data-value="cpu" class="stat-val"><span class="sk block h-8 w-20"></span></span>
                 </div>
-                <div class="text-xs text-white/35 mt-1 mb-3" data-value="temp">🌡️ --</div>
-                <svg data-spark="cpu" viewBox="0 0 100 24" preserveAspectRatio="none" class="w-full h-6"></svg>
-                <div class="flex justify-between text-[10px] text-white/30 mt-1" data-sparkrange="cpu"><span>--</span><span>--</span></div>
-                <div id="coreBars" class="grid grid-cols-4 gap-1 mt-3"></div>
-            </div>
+                <svg data-spark="cpu" viewBox="0 0 100 24" preserveAspectRatio="none" class="spark w-full h-7 mt-3" aria-hidden="true"></svg>
+                <div class="flex justify-between text-[10px] faint mt-1" data-sparkrange="cpu"><span>--</span><span>--</span></div>
+                <div id="coreBars" class="mt-3 space-y-1.5"></div>
+            </section>
 
-            <!-- RAM -->
-            <div class="card p-5">
-                <div class="flex items-center gap-2.5 mb-4">
-                    <div class="icon-chip metric-chip" data-tint="ram">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            <section class="card p-5" aria-label="Memoria RAM">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="ram" aria-hidden="true">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
                     </div>
                     <span class="label">RAM</span>
                 </div>
                 <div class="stat-value" data-color="ram">
-                    <span data-value="ram" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                    <span data-value="ram" class="stat-val"><span class="sk block h-8 w-20"></span></span>
                 </div>
-                <div class="flex justify-between text-xs text-white/35 mt-1 mb-3">
+                <div class="usage-track mt-3"><div id="ramBar" style="width:0%;background:var(--series-ram)"></div></div>
+                <div class="flex justify-between text-[11px] faint mt-2">
                     <span data-value="ramUsedLabel">--</span>
                     <span data-value="ramTotalLabel">--</span>
                 </div>
-                <svg data-spark="ram" viewBox="0 0 100 24" preserveAspectRatio="none" class="w-full h-6"></svg>
-                <div class="flex justify-between text-[10px] text-white/30 mt-1" data-sparkrange="ram"><span>--</span><span>--</span></div>
-            </div>
+                <svg data-spark="ram" viewBox="0 0 100 24" preserveAspectRatio="none" class="spark w-full h-7 mt-3" aria-hidden="true"></svg>
+                <div class="flex justify-between text-[10px] faint mt-1" data-sparkrange="ram"><span>--</span><span>--</span></div>
+            </section>
 
-            <!-- Disco -->
-            <div class="card p-5">
-                <div class="flex items-center gap-2.5 mb-4">
-                    <div class="icon-chip metric-chip" data-tint="disk">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+            <section class="card p-5" aria-label="Disco">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="disk" aria-hidden="true">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
                     </div>
                     <span class="label">Disco</span>
                 </div>
                 <div class="stat-value" data-color="disk">
-                    <span data-value="disk" class="stat-val"><div class="sk h-7 w-16"></div></span>
+                    <span data-value="disk" class="stat-val"><span class="sk block h-8 w-20"></span></span>
                 </div>
-                <div class="flex justify-between text-xs text-white/35 mt-1">
+                <div class="usage-track mt-3"><div id="diskBar" style="width:0%;background:var(--series-disk)"></div></div>
+                <div class="flex justify-between text-[11px] faint mt-2">
                     <span data-value="diskUsedLabel">--</span>
                     <span data-value="diskTotalLabel">--</span>
                 </div>
-            </div>
+                <p class="text-[11px] faint mt-3 leading-relaxed">Uso del volumen principal del servidor.</p>
+            </section>
 
-            <!-- Red -->
-            <div class="card p-5">
-                <div class="flex items-center gap-2.5 mb-4">
-                    <div class="icon-chip metric-chip" data-tint="net">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0"></path></svg>
+            <section class="card p-5" aria-label="Red">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="net" aria-hidden="true">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.858 15.355-5.858 21.213 0"/></svg>
                     </div>
                     <span class="label">Red</span>
+                    <span class="pill ml-auto" style="font-size:10px;">en vivo</span>
                 </div>
-                <div class="text-lg font-bold leading-snug" style="color:var(--series-net)">
-                    <span data-value="netDown" class="stat-val block"><div class="sk h-5 w-20"></div></span>
-                    <span data-value="netUp" class="stat-val block mt-1"><div class="sk h-5 w-20"></div></span>
+                <div class="space-y-2.5 mt-1">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-sm font-bold" style="color:var(--series-net)">⬇</span>
+                        <span class="text-xl font-extrabold" data-value="netDown"><span class="sk block h-6 w-24"></span></span>
+                    </div>
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-sm font-bold" style="color:var(--series-net)">⬆</span>
+                        <span class="text-xl font-extrabold" data-value="netUp"><span class="sk block h-6 w-24"></span></span>
+                    </div>
                 </div>
-            </div>
+                <p class="text-[11px] faint mt-3 leading-relaxed">Velocidad de bajada y subida en este instante.</p>
+            </section>
         </div>
 
-        <!-- Visitantes en tiempo real -->
-        <div class="card p-5">
-            <div class="flex items-center gap-2.5 mb-4">
-                <div class="icon-chip metric-chip" data-tint="gw">👥</div>
+        <!-- ══════════ Visitantes en tiempo real ══════════ -->
+        <section class="card p-5 md:p-6 mb-4" aria-label="Visitantes en tiempo real">
+            <div class="section-head">
+                <div class="icon-chip metric-chip" data-tint="gw" aria-hidden="true">👥</div>
                 <span class="label">Visitantes en tiempo real</span>
-                <span id="visitorsBadge" class="pill text-white/30 ml-auto">--</span>
+                <span id="visitorsBadge" class="pill ml-auto">--</span>
             </div>
-            <div class="grid grid-cols-3 gap-3 mb-4">
-                <div>
-                    <div class="label mb-1">Activos ahora</div>
-                    <div class="text-xl font-bold text-white" data-value="visActive"><div class="sk h-6 w-10"></div></div>
+            <div class="grid grid-cols-3 gap-3 mb-2">
+                <div class="rounded-2xl p-3.5" style="background:rgba(255,255,255,0.025);border:1px solid var(--border)">
+                    <div class="label mb-1.5">Activos ahora</div>
+                    <div class="text-2xl font-extrabold" data-value="visActive"><span class="sk block h-7 w-10"></span></div>
                 </div>
-                <div>
-                    <div class="label mb-1">Últimos 5 min</div>
-                    <div class="text-xl font-bold text-white" data-value="visTotal"><div class="sk h-6 w-10"></div></div>
+                <div class="rounded-2xl p-3.5" style="background:rgba(255,255,255,0.025);border:1px solid var(--border)">
+                    <div class="label mb-1.5">Últimos 5 min</div>
+                    <div class="text-2xl font-extrabold" data-value="visTotal"><span class="sk block h-7 w-10"></span></div>
                 </div>
-                <div>
-                    <div class="label mb-1">Requests</div>
-                    <div class="text-xl font-bold text-white" data-value="visRequests"><div class="sk h-6 w-10"></div></div>
+                <div class="rounded-2xl p-3.5" style="background:rgba(255,255,255,0.025);border:1px solid var(--border)">
+                    <div class="label mb-1.5">Requests</div>
+                    <div class="text-2xl font-extrabold" data-value="visRequests"><span class="sk block h-7 w-10"></span></div>
                 </div>
             </div>
             <div id="visitorsContainer">
-                <div class="text-xs text-white/30 text-center py-6">Esperando datos...</div>
+                <div class="text-xs faint text-center py-6">Esperando datos…</div>
             </div>
-        </div>
+        </section>
 
-        <!-- Uptime / Swap / OS -->
-        <div class="card p-5 mb-4">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                <div>
-                    <div class="label mb-1.5">⏱️ Uptime</div>
-                    <div class="text-lg font-bold text-white" data-value="uptime"><div class="sk h-6 w-32"></div></div>
+        <!-- ══════════ Sistema + OpenClaw ══════════ -->
+        <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
+            <section class="card p-5 md:p-6 lg:col-span-2" aria-label="Sistema">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="disk" aria-hidden="true">🖥️</div>
+                    <span class="label">Sistema</span>
                 </div>
-                <div>
-                    <div class="label mb-1.5">💾 Swap</div>
-                    <div class="text-lg font-bold" data-color="swap" data-value="swapLabel"><div class="sk h-6 w-20"></div></div>
-                </div>
-                <div>
-                    <div class="label mb-1.5">🖥️ OS</div>
-                    <div class="text-lg font-bold text-white" data-value="osDistro"><div class="sk h-6 w-40"></div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- OpenClaw Gateway -->
-        <div class="card p-6 mb-4">
-            <div class="flex items-center justify-between mb-5">
-                <div class="flex items-center gap-2.5">
-                    <div class="icon-chip metric-chip" data-tint="gw">⚙️</div>
-                    <span class="label">OpenClaw Gateway</span>
-                </div>
-                <span id="latencyBadge" class="pill text-white/30">-- ms</span>
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-5">
-                <div>
-                    <div class="label mb-1.5">Estado</div>
-                    <div class="flex items-center gap-2">
-                        <span class="w-2 h-2 rounded-full" data-value="ocStatusDot" style="background:#555"></span>
-                        <span class="text-sm font-bold text-white" data-value="ocStatusText">--</span>
+                <dl class="divide-y" style="border-color:var(--border)">
+                    <div class="flex items-center justify-between gap-3 py-3.5">
+                        <dt class="text-xs muted">⏱️ Uptime</dt>
+                        <dd class="text-[15px] font-bold text-right" data-value="uptime"><span class="sk block h-5 w-28"></span></dd>
                     </div>
+                    <div class="flex items-center justify-between gap-3 py-3.5">
+                        <dt class="text-xs muted">💾 Swap</dt>
+                        <dd class="text-[15px] font-bold text-right" data-color="swap" data-value="swapLabel"><span class="sk block h-5 w-14"></span></dd>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 py-3.5">
+                        <dt class="text-xs muted">🐧 OS</dt>
+                        <dd class="text-[15px] font-bold text-right truncate max-w-[60%]" data-value="osDistro"><span class="sk block h-5 w-36"></span></dd>
+                    </div>
+                </dl>
+            </section>
+
+            <section class="card p-5 md:p-6 lg:col-span-3" aria-label="OpenClaw Gateway">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="gw" aria-hidden="true">⚙️</div>
+                    <span class="label">OpenClaw Gateway</span>
+                    <span id="latencyBadge" class="pill ml-auto">-- ms</span>
                 </div>
-                <div><div class="label mb-1.5">PID</div><div class="text-sm text-white/80" data-value="ocPid">--</div></div>
-                <div><div class="label mb-1.5">RAM</div><div class="text-sm text-white/80" data-value="ocMem">--</div></div>
-                <div><div class="label mb-1.5">Tareas</div><div class="text-sm text-white/80" data-value="ocTasks">--</div></div>
-                <div><div class="label mb-1.5">Versión</div><div class="text-sm text-white/80" data-value="ocVersion">--</div></div>
-                <div><div class="label mb-1.5">Sesiones</div><div class="text-sm text-white/80" data-value="ocSessions">--</div></div>
-                <div><div class="label mb-1.5">Modelo</div><div class="text-sm text-white/80" data-value="ocModel">--</div></div>
-                <div><div class="label mb-1.5">Reinicios</div><div class="text-sm text-white/80" data-value="ocRestarts">--</div></div>
-            </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-5">
+                    <div>
+                        <div class="label mb-1.5">Estado</div>
+                        <div class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" data-value="ocStatusDot" style="background:#555"></span>
+                            <span class="text-sm font-bold truncate" data-value="ocStatusText">--</span>
+                        </div>
+                    </div>
+                    <div><div class="label mb-1.5">PID</div><div class="text-sm font-semibold" data-value="ocPid">--</div></div>
+                    <div><div class="label mb-1.5">RAM</div><div class="text-sm font-semibold" data-value="ocMem">--</div></div>
+                    <div><div class="label mb-1.5">Tareas</div><div class="text-sm font-semibold" data-value="ocTasks">--</div></div>
+                    <div><div class="label mb-1.5">Versión</div><div class="text-sm font-semibold truncate" data-value="ocVersion">--</div></div>
+                    <div><div class="label mb-1.5">Sesiones</div><div class="text-sm font-semibold" data-value="ocSessions">--</div></div>
+                    <div><div class="label mb-1.5">Modelo</div><div class="text-sm font-semibold truncate" data-value="ocModel">--</div></div>
+                    <div><div class="label mb-1.5">Reinicios</div><div class="text-sm font-semibold" data-value="ocRestarts">--</div></div>
+                </div>
+                <a href="/oc-panel-login" class="btn-primary rounded-xl mt-6 px-5 py-3 text-xs font-bold tracking-wide inline-flex items-center justify-center gap-2 w-full sm:w-auto">
+                    <span aria-hidden="true">🔓</span> Abrir Panel de Control
+                </a>
+            </section>
         </div>
 
-        <!-- Acceso rápido al Panel de OpenClaw -->
-        <div class="card p-6 mb-4 flex items-center justify-between">
-            <div>
-                <div class="label mb-1.5">🎛️ Panel de Control</div>
-                <p class="text-xs text-white/40">Accede a la consola web de OpenClaw Gateway</p>
+        <!-- ══════════ Acciones del servidor ══════════ -->
+        <section class="card p-5 md:p-6 mb-4" aria-label="Acciones del servidor">
+            <div class="section-head">
+                <div class="icon-chip metric-chip" data-tint="gw" aria-hidden="true">🛠️</div>
+                <span class="label">Acciones del servidor</span>
             </div>
-            <a href="/oc-panel-login" class="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold tracking-wide inline-flex items-center gap-2">
-                <span>🔓</span> Abrir Panel
-            </a>
-        </div>
-
-        <!-- Acciones del Servidor -->
-        <div class="card p-6 mb-4">
-            <div class="label mb-4">🛠️ Acciones del Servidor</div>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button data-action="restart-openclaw" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg> Reiniciar OpenClaw
+            <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                <button data-action="restart-openclaw" class="btn-action rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+                    Reiniciar OpenClaw
                 </button>
-                <button data-action="free-ram" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M5 6v14h14V6M9 10v6M15 10v6"/></svg> Liberar RAM
+                <button data-action="free-ram" class="btn-action rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M5 6v14h14V6M9 10v6M15 10v6"/></svg>
+                    Liberar RAM
                 </button>
-                <button data-action="free-swap" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h6v6H7z"/><path d="M13 13h4v4h-4z"/></svg> Liberar Swap
+                <button data-action="free-swap" class="btn-action rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h6v6H7z"/><path d="M13 13h4v4h-4z"/></svg>
+                    Liberar Swap
                 </button>
-                <button data-action="doctor-fix" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg> Doctor Fix
+                <button data-action="doctor-fix" class="btn-action rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6 6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6 6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></svg>
+                    Doctor Fix
                 </button>
-                <button id="openPlayerBtn" class="btn-action rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> Reproductor
+                <button id="openPlayerBtn" class="btn-action rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                    Reproductor
                 </button>
-                <button data-action="reboot" class="btn-action btn-danger rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5" style="color:var(--status-warning)">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg> Reiniciar Servidor
+                <button data-action="reboot" class="btn-action btn-danger-warn rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center" style="color:var(--status-warning)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+                    Reiniciar Servidor
                 </button>
-                <button data-action="shutdown" class="btn-action btn-danger rounded-xl p-3.5 text-xs font-semibold flex flex-col items-center gap-1.5" style="color:var(--status-critical)">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.7 2.3a1 1 0 0 0-1.4 0L8 5.6a1 1 0 0 0 0 1.4l3.3 3.3a1 1 0 0 0 1.4 0L16 7a1 1 0 0 0 0-1.4z"/><path d="M12 2v10"/><circle cx="12" cy="12" r="10"/></svg> Apagar Servidor
+                <button data-action="shutdown" class="btn-action btn-danger-crit rounded-2xl p-4 text-xs font-semibold flex flex-col items-center gap-2 text-center col-span-2 sm:col-span-1" style="color:var(--status-critical)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></svg>
+                    Apagar Servidor
                 </button>
             </div>
-            <style>@media(max-width:640px){div.grid.grid-cols-2.md\\:grid-cols-4:has([data-action="free-swap"]){grid-template-columns:repeat(2,1fr)}}</style>
-            <div id="actionResult" class="text-xs mt-4 min-h-[16px] text-white/40"></div>
-        </div>
+            <div id="actionResult" class="text-xs mt-4 min-h-[16px] muted" role="status" aria-live="polite"></div>
+        </section>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
-            <!-- Sesiones Activas -->
-            <div class="card p-6">
-                <div class="label mb-4">🔄 Sesiones Recientes</div>
+        <!-- ══════════ Sesiones + Procesos ══════════ -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <section class="card p-5 md:p-6" aria-label="Sesiones recientes">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="cpu" aria-hidden="true">🔄</div>
+                    <span class="label">Sesiones recientes</span>
+                </div>
                 <div id="sessionsContainer">
-                    <div class="text-xs text-white/30 text-center py-6">Esperando datos...</div>
+                    <div class="text-xs faint text-center py-6">Esperando datos…</div>
                 </div>
-            </div>
+            </section>
 
-            <!-- Top Procesos -->
-            <div class="card p-6">
-                <div class="label mb-4">📊 Top Procesos</div>
+            <section class="card p-5 md:p-6" aria-label="Top procesos">
+                <div class="section-head">
+                    <div class="icon-chip metric-chip" data-tint="ram" aria-hidden="true">📊</div>
+                    <span class="label">Top procesos</span>
+                </div>
                 <div id="processesContainer">
-                    <div class="text-xs text-white/30 text-center py-6">Esperando datos...</div>
+                    <div class="text-xs faint text-center py-6">Esperando datos…</div>
                 </div>
-            </div>
+            </section>
         </div>
-    </div>
 
-    <!-- Modal de confirmación (reboot / shutdown) -->
-    <div id="confirmModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4">
-        <div class="card-raised rounded-2xl p-6 w-full max-w-sm">
-            <h3 id="modalTitle" class="text-sm font-bold text-white mb-2">--</h3>
-            <p id="modalWarning" class="text-xs text-white/45 mb-4 leading-relaxed">--</p>
+        <footer class="text-center text-[11px] faint mt-10 pb-2">
+            NexoDashboard · monitoreo local del servidor
+        </footer>
+    </main>
+
+    <!-- ══════════ Modal de confirmación (reboot / shutdown) ══════════ -->
+    <div id="confirmModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="card-raised modal-card rounded-2xl p-6 w-full max-w-sm">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="icon-chip" style="background:rgba(242,85,85,0.12);color:var(--status-critical);border:1px solid rgba(242,85,85,0.3)" aria-hidden="true">⚠️</div>
+                <h3 id="modalTitle" class="text-[15px] font-bold">--</h3>
+            </div>
+            <p id="modalWarning" class="text-xs muted mb-4 leading-relaxed">--</p>
             <div id="modalHoursRow" class="mb-3 hidden">
-                <label class="label block mb-1.5">Despertar en</label>
-                <select id="modalHours" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white">
+                <label class="label block mb-1.5" for="modalHours">Despertar en</label>
+                <select id="modalHours" class="field">
                     <option value="1">1 hora</option>
                     <option value="4">4 horas</option>
                     <option value="12">12 horas</option>
                     <option value="24">24 horas</option>
                 </select>
             </div>
-            <label class="label block mb-1.5">Clave</label>
-            <input type="password" id="modalPassword" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white mb-3">
-            <label class="label block mb-1.5">Escribe <span id="modalConfirmWord" class="text-white/70"></span> para confirmar</label>
-            <input type="text" id="modalConfirmInput" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 text-sm text-white mb-4">
+            <label class="label block mb-1.5" for="modalPassword">Clave</label>
+            <input type="password" id="modalPassword" class="field mb-3" autocomplete="current-password">
+            <label class="label block mb-1.5" for="modalConfirmInput">Escribe <span id="modalConfirmWord" class="text-white/70"></span> para confirmar</label>
+            <input type="text" id="modalConfirmInput" class="field mb-5" autocomplete="off">
             <div class="flex gap-2">
                 <button id="modalCancel" class="flex-1 btn-action rounded-xl p-2.5 text-xs font-semibold">Cancelar</button>
-                <button id="modalConfirm" disabled class="flex-1 rounded-xl p-2.5 text-xs font-bold text-white" style="background:color-mix(in srgb, var(--status-critical) 55%, transparent)">Confirmar</button>
+                <button id="modalConfirm" disabled class="flex-1 rounded-xl p-2.5 text-xs font-bold text-white" style="background:rgba(242,85,85,0.45);cursor:not-allowed;">Confirmar</button>
             </div>
         </div>
     </div>
 
-    <!-- Modal de Cambiar Clave -->
-    <div id="changePassModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4">
-        <div class="card-raised rounded-2xl p-6 w-full max-w-sm">
-            <h3 class="text-sm font-bold text-white mb-4">🔑 Cambiar Clave de Acceso</h3>
-            <label class="label block mb-1.5">Clave actual</label>
+    <!-- ══════════ Modal de Cambiar Clave ══════════ -->
+    <div id="changePassModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="changePassTitle">
+        <div class="card-raised modal-card rounded-2xl p-6 w-full max-w-sm">
+            <div class="flex items-center gap-3 mb-5">
+                <div class="icon-chip metric-chip" data-tint="gw" aria-hidden="true">🔑</div>
+                <h3 id="changePassTitle" class="text-[15px] font-bold">Cambiar clave de acceso</h3>
+            </div>
+            <label class="label block mb-1.5" for="curPass">Clave actual</label>
             <div class="relative mb-3">
-                <input type="password" id="curPass" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+                <input type="password" id="curPass" class="field" style="padding-right:2.5rem" autocomplete="current-password">
                 <button type="button" class="eye-toggle-btn" data-target="curPass" tabindex="-1" aria-label="Mostrar contraseña">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
             </div>
-            <label class="label block mb-1.5">Clave nueva (mín. 8 caracteres)</label>
+            <label class="label block mb-1.5" for="newPass">Clave nueva (mín. 8 caracteres)</label>
             <div class="relative mb-3">
-                <input type="password" id="newPass" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+                <input type="password" id="newPass" class="field" style="padding-right:2.5rem" autocomplete="new-password">
                 <button type="button" class="eye-toggle-btn" data-target="newPass" tabindex="-1" aria-label="Mostrar contraseña">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
             </div>
-            <label class="label block mb-1.5">Confirmar clave nueva</label>
-            <div class="relative mb-4">
-                <input type="password" id="newPass2" class="w-full bg-white/5 border border-white/10 rounded-lg p-2 pr-9 text-sm text-white">
+            <label class="label block mb-1.5" for="newPass2">Confirmar clave nueva</label>
+            <div class="relative mb-2">
+                <input type="password" id="newPass2" class="field" style="padding-right:2.5rem" autocomplete="new-password">
                 <button type="button" class="eye-toggle-btn" data-target="newPass2" tabindex="-1" aria-label="Mostrar contraseña">
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                 </button>
             </div>
-            <div id="changePassResult" class="text-xs mb-3 min-h-[16px]"></div>
+            <div id="changePassResult" class="text-xs mb-3 min-h-[16px]" role="status" aria-live="polite"></div>
             <div class="flex gap-2">
                 <button id="changePassCancel" class="flex-1 btn-action rounded-xl p-2.5 text-xs font-semibold">Cancelar</button>
                 <button id="changePassBtn" class="flex-1 btn-primary rounded-xl p-2.5 text-xs font-bold inline-flex items-center justify-center gap-2">
