@@ -3,61 +3,39 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Acceso a NexoDashboard">
 <title>NexoDashboard — Acceso</title>
+<link rel="stylesheet" href="/tailwind.css">
 <link rel="stylesheet" href="/theme.css">
-<style>
-  html, body { height: 100%; margin: 0; }
-  body { display: flex; align-items: center; justify-content: center; }
-  .login-card { width: 320px; padding: 36px 32px; }
-  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-  .brand-badge {
-    width: 38px; height: 38px; border-radius: 11px;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    display: flex; align-items: center; justify-content: center; font-size: 18px;
-  }
-  .brand-title { font-size: 15px; font-weight: 700; color: var(--ink); }
-  .brand-sub { font-size: 12px; color: var(--ink-muted); margin: 2px 0 24px; }
-  .field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ink-muted); display: block; margin-bottom: 6px; }
-  .field-wrap { position: relative; }
-  input[type="password"], input[type="text"].pw-input {
-    width: 100%; background: var(--surface-raised); border: 1px solid var(--border);
-    border-radius: 10px; padding: 11px 40px 11px 13px; color: var(--ink); font-size: 14px;
-    font-family: inherit; transition: border-color 0.15s; box-sizing: border-box;
-  }
-  input[type="password"]:focus, input[type="text"].pw-input:focus { outline: none; border-color: var(--accent); }
-  .eye-toggle {
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; cursor: pointer; color: var(--ink-muted);
-    padding: 6px; display: flex; align-items: center; border-radius: 6px;
-  }
-  .eye-toggle:hover { color: var(--ink-secondary); }
-  .submit-btn {
-    width: 100%; margin-top: 18px; padding: 11px; border: none; border-radius: 10px;
-    font-weight: 600; font-size: 13px; letter-spacing: 0.02em; cursor: pointer;
-    font-family: inherit; display: flex; align-items: center; justify-content: center; gap: 8px;
-  }
-  .err { color: var(--status-critical); font-size: 12px; margin-top: 12px; min-height: 14px; text-align: center; }
-</style>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 </head>
-<body>
-  <form class="card login-card" id="loginForm">
-    <div class="brand">
-      <div class="brand-badge">🔗</div>
-      <div class="brand-title">NexoDashboard</div>
-    </div>
-    <p class="brand-sub">Acceso al panel de monitoreo</p>
-    <label class="field-label" for="password">Clave de acceso</label>
-    <div class="field-wrap">
-      <input type="password" id="password" name="password" autofocus required autocomplete="current-password">
-      <button type="button" class="eye-toggle" id="toggleEye" tabindex="-1" aria-label="Mostrar contraseña">
-        <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+<body class="antialiased">
+  <div class="login-wrap">
+    <form class="card login-card" id="loginForm" novalidate>
+      <div class="flex items-center gap-3 mb-1">
+        <div class="brand-badge" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <span class="text-[15px] font-bold">NexoDashboard</span>
+        <span class="pill ml-auto" style="font-size:10px;">acceso seguro</span>
+      </div>
+      <p class="text-xs muted mb-6 leading-relaxed">Introduce tu clave para acceder al panel de monitoreo del servidor.</p>
+
+      <label class="label block mb-1.5" for="password">Clave de acceso</label>
+      <div style="position:relative">
+        <input type="password" id="password" name="password" autofocus required autocomplete="current-password" class="field" style="padding-right:2.6rem" placeholder="••••••••">
+        <button type="button" class="eye-toggle-btn" id="toggleEye" tabindex="-1" aria-label="Mostrar contraseña">
+          <svg id="eyeIcon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+        </button>
+      </div>
+
+      <button type="submit" class="btn-primary w-full mt-5 rounded-xl py-3 text-sm font-bold inline-flex items-center justify-center gap-2" id="submitBtn">
+        <span id="btnLabel">Entrar</span>
       </button>
-    </div>
-    <button type="submit" class="submit-btn btn-primary" id="submitBtn">
-      <span id="btnLabel">Entrar</span>
-    </button>
-    <div class="err" id="err"></div>
-  </form>
+      <div class="login-err" id="err" role="status" aria-live="polite"></div>
+      <p class="text-[11px] faint text-center mt-4 leading-relaxed">La clave se guarda cifrada en el servidor (PBKDF2). Solo quien la conoce puede entrar.</p>
+    </form>
+  </div>
   <script src="/login.js" defer></script>
 </body>
 </html>
