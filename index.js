@@ -8,6 +8,10 @@ const si = require('systeminformation');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+// Módulo de funcionalidades extendidas (I/O, docker, servicios, SMART,
+// historial persistente, alertas, procesos, logs, checks, quick links).
+// Solo AGREGA claves al payload 'stats' y rutas nuevas; no toca lo existente.
+const extras = require('./extras');
 
 const app = express();
 app.disable('x-powered-by');
@@ -215,6 +219,11 @@ io.use((socket, next) => {
 
 app.use(requireDashAuth);
 
+// Funcionalidades extendidas (extras.js): sus rutas quedan tras
+// requireDashAuth, así que exigen sesión como todo lo demás.
+extras.registerRoutes(app);
+extras.boot();
+
 app.post('/api/change-password', express.json(), (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!verifyPassword(currentPassword)) {
@@ -259,6 +268,8 @@ app.get('/api/stats', (req, res) => {
         bluetooth: bluetoothCache,
         history: { short: shortHistory, daily: dailyHistory },
         pollingActive: clientCount > 0,
+        // Claves NUEVAS (extras.js) — lo anterior se mantiene intacto.
+        ...extras.snapshot(),
     });
 });
 
@@ -1097,7 +1108,7 @@ async function pollPing() {
 
 // ===== Poll global (una sola vez para todos los clientes conectados) =====
 let clientCount = 0;
-let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null, ivVisitors = null;
+let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null, ivVisitors = null, ivExtrasSlow = null;
 
 function startPolling() {
     if (ivFast) return;
@@ -1105,7 +1116,8 @@ function startPolling() {
         const sys = await getSysStats();
         const player = await getPlayerStatus();
         playerCache = player;
-        io.emit('stats', { sys, memHistory, cpuHistory, player, history: { short: shortHistory, daily: dailyHistory } });
+        const { io: ioStats, alerts } = await extras.pollFast(sys);
+        io.emit('stats', { sys, memHistory, cpuHistory, player, history: { short: shortHistory, daily: dailyHistory }, io: ioStats, alerts });
     }, 2000);
     ivProcs = setInterval(async () => {
         const processes = await getTopProcesses();
@@ -1120,6 +1132,12 @@ function startPolling() {
         bluetoothCache = await getBluetoothInfo();
         io.emit('stats', { bluetooth: bluetoothCache });
     }, 20000);
+    // Fuentes pesadas de extras (docker, servicios systemd, SMART, checks):
+    // cada 30 s bastan y cuidan la CPU del E-300.
+    ivExtrasSlow = setInterval(async () => {
+        const extra = await extras.pollSlow();
+        io.emit('stats', extra);
+    }, 30000);
     getSysStats().then(sys => io.emit('stats', { sys, memHistory, cpuHistory }));
     getTopProcesses().then(processes => io.emit('stats', { processes }));
     getPlayerStatus().then(player => { playerCache = player; io.emit('stats', { player }); });
@@ -1129,13 +1147,14 @@ function startPolling() {
     pollSessions();
     pollPing();
     pollVisitors();
+    extras.pollSlow().then((extra) => io.emit('stats', extra));
 }
 
 function stopPolling() {
     clearInterval(ivFast); clearInterval(ivProcs); clearInterval(ivGateway);
     clearInterval(ivGatewayLogs); clearInterval(ivSessions); clearInterval(ivPing);
-    clearInterval(ivBluetooth); clearInterval(ivVisitors);
-    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = ivVisitors = null;
+    clearInterval(ivBluetooth); clearInterval(ivVisitors); clearInterval(ivExtrasSlow);
+    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = ivVisitors = ivExtrasSlow = null;
 }
 
 io.on('connection', (socket) => {
@@ -1154,6 +1173,7 @@ io.on('connection', (socket) => {
       player: playerCache,
       bluetooth: bluetoothCache,
       visitors: visitorsCache,
+      ...extras.snapshot(),
   });
 
   socket.on('disconnect', () => {
