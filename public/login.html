@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="Acceso a NexoDashboard">
 <title>NexoDashboard — Acceso</title>
+<link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/tailwind.css">
 <link rel="stylesheet" href="/theme.css">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -14,12 +15,12 @@
     <form class="card login-card" id="loginForm" novalidate>
       <div class="flex items-center gap-3 mb-1">
         <div class="brand-badge" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg>
         </div>
-        <span class="text-[15px] font-bold">NexoDashboard</span>
-        <span class="pill ml-auto" style="font-size:10px;">acceso seguro</span>
+        <span style="font-size:15px;font-weight:800;letter-spacing:-0.01em">NexoDashboard</span>
+        <span class="pill ml-auto" style="font-size:10px">acceso seguro</span>
       </div>
-      <p class="text-xs muted mb-6 leading-relaxed">Introduce tu clave para acceder al panel de monitoreo del servidor.</p>
+      <p class="muted mb-6" style="font-size:12px;line-height:1.6">Centro de comando del servidor. Introduce tu clave para entrar.</p>
 
       <label class="label block mb-1.5" for="password">Clave de acceso</label>
       <div style="position:relative">
@@ -29,11 +30,11 @@
         </button>
       </div>
 
-      <button type="submit" class="btn-primary w-full mt-5 rounded-xl py-3 text-sm font-bold inline-flex items-center justify-center gap-2" id="submitBtn">
+      <button type="submit" class="btn-primary w-full mt-5 rounded-xl py-3 inline-flex items-center justify-center gap-2" id="submitBtn" style="font-size:14px;font-weight:700">
         <span id="btnLabel">Entrar</span>
       </button>
       <div class="login-err" id="err" role="status" aria-live="polite"></div>
-      <p class="text-[11px] faint text-center mt-4 leading-relaxed">La clave se guarda cifrada en el servidor (PBKDF2). Solo quien la conoce puede entrar.</p>
+      <p class="faint text-center mt-4" style="font-size:11px;line-height:1.6">La clave se guarda cifrada en el servidor (PBKDF2). Solo quien la conoce puede entrar.</p>
     </form>
   </div>
   <script src="/login.js" defer></script>

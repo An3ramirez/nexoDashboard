@@ -129,8 +129,15 @@ app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(
 // Sin estas rutas quedaban detrás de requireDashAuth y el navegador recibía un
 // 302 al propio /login: ni los estilos ni el JS cargaban.
 app.get('/tailwind.css', (req, res) => res.sendFile('tailwind.css', { root: path.join(__dirname, 'public') }));
+app.get('/fonts.css', (req, res) => res.sendFile('fonts.css', { root: path.join(__dirname, 'public') }));
 app.get('/dashboard.js', (req, res) => res.sendFile('dashboard.js', { root: path.join(__dirname, 'public') }));
+app.get('/panels.js', (req, res) => res.sendFile('panels.js', { root: path.join(__dirname, 'public') }));
 app.get('/login.js', (req, res) => res.sendFile('login.js', { root: path.join(__dirname, 'public') }));
+// Fuentes Inter self-hosted (subset latino .woff2): las pide el CSS antes de la sesión.
+app.get('/fonts/:file', (req, res) => {
+  if (!/^inter-[458]00\.woff2$/.test(req.params.file)) return res.status(404).end();
+  res.sendFile(req.params.file, { root: path.join(__dirname, 'public', 'fonts') });
+});
 app.get('/favicon.svg', (req, res) => res.sendFile('favicon.svg', { root: path.join(__dirname, 'public') }));
 
 // ===== Salud del propio dashboard =====
@@ -885,6 +892,20 @@ function readAccessLogTail(maxBytes = 4 * 1024 * 1024) {
     }
 }
 
+// Dominio principal del proyecto: toda visita a *.corposoft.net se etiqueta
+// con este dominio y su subdominio ("" = dominio raíz).
+const PRIMARY_DOMAIN = 'corposoft.net';
+
+function splitDomain(host) {
+    const h = String(host || '').trim().toLowerCase().split(':')[0];
+    if (!h) return { host: '', domain: PRIMARY_DOMAIN, subdomain: '' };
+    if (h === PRIMARY_DOMAIN || h.endsWith('.' + PRIMARY_DOMAIN)) {
+        const sub = h === PRIMARY_DOMAIN ? '' : h.slice(0, -(PRIMARY_DOMAIN.length + 1));
+        return { host: h, domain: PRIMARY_DOMAIN, subdomain: sub };
+    }
+    return { host: h, domain: h, subdomain: '' };
+}
+
 async function getVisitors() {
     const now = Date.now();
     const byIp = new Map();
@@ -894,9 +915,19 @@ async function getVisitors() {
         for (const line of lines) {
             if (!line.trim()) continue;
             // Formato nuevo: remote|cfip|time|method|uri|status|ua
+            // Formato con vhost: host|remote|cfip|time|method|uri|status|ua
+            // (nginx registra $host como primer campo cuando hay varios vhosts).
             const parts = line.split('|');
-            let ip = null, ts = null, method = null, uri = null, status = null, ua = null;
-            if (parts.length >= 7) {
+            let ip = null, ts = null, method = null, uri = null, status = null, ua = null, host = '';
+            if (parts.length >= 8) {
+                host = (parts[0] || '').trim();
+                ip = (parts[2] || '').trim();
+                ts = parseNginxTime(parts[3]);
+                method = parts[4];
+                uri = parts[5];
+                status = parts[6];
+                ua = parts.slice(7).join('|');
+            } else if (parts.length >= 7) {
                 ip = (parts[1] || '').trim();
                 ts = parseNginxTime(parts[2]);
                 method = parts[3];
@@ -917,11 +948,16 @@ async function getVisitors() {
             }
             if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') continue;
             if (!ts || now - ts > VISITOR_WINDOW_MS) continue;
-            const rec = byIp.get(ip) || { ip, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua };
+            // Clave por IP+dominio: el mismo visitante en dos subdominios
+            // (p. ej. app.corposoft.net y api.corposoft.net) aparece dos veces,
+            // una por cada subdominio. Sin esto, los subdominios se pisaban.
+            const { domain, subdomain } = splitDomain(host);
+            const key = ip + '|' + (host || domain);
+            const rec = byIp.get(key) || { ip, host, domain, subdomain, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua };
             rec.requests++;
-            if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; }
+            if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; rec.host = host || rec.host; const d2 = splitDomain(rec.host); rec.domain = d2.domain; rec.subdomain = d2.subdomain; }
             if (ts < rec.firstSeen) rec.firstSeen = ts;
-            byIp.set(ip, rec);
+            byIp.set(key, rec);
         }
     } catch {}
     const active = Array.from(byIp.values())
@@ -930,6 +966,9 @@ async function getVisitors() {
             const idleMs = now - r.lastSeen;
             return {
                 ip: r.ip,
+                host: r.host || r.domain,
+                domain: r.domain,
+                subdomain: r.subdomain || '',
                 device,
                 browser,
                 requests: r.requests,
