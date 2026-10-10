@@ -261,7 +261,7 @@
 
             // ===== Visitantes en tiempo real =====
             const vis = state.visitors || { active: [], total: 0 };
-            const visActive = vis.active || [];
+            const visActive = (vis.active || []).filter(v => !/Bot/.test(v.device || ''));
             const visTotal = vis.total || 0;
             q('visActive').textContent = visActive.length;
             q('visTotal').textContent = visTotal;
@@ -278,13 +278,17 @@
             const visContainer = document.getElementById('visitorsContainer');
             if (visActive.length > 0) {
                 let vhtml = '<div class="overflow-x-auto"><table class="data-table">';
-                vhtml += '<thead><tr><th>IP</th><th>Dispositivo</th><th>Requests</th><th class="hidden md:table-cell">Última ruta</th><th>Estado</th></tr></thead><tbody>';
+                vhtml += '<thead><tr><th>IP</th><th>Dominio</th><th>Dispositivo</th><th>Requests</th><th class="hidden md:table-cell">Última ruta</th><th>Estado</th></tr></thead><tbody>';
                 visActive.slice(0, 10).forEach(v => {
                     const statusColor = v.active ? 'var(--status-good)' : 'var(--status-warning)';
                     const statusTxt = v.active ? '● Activo' : '○ Inactivo ' + (v.idleSec > 60 ? Math.round(v.idleSec/60) + 'm' : v.idleSec + 's');
                     const uri = esc((v.lastUri || '/').slice(0, 40));
+                    // Dominio principal siempre visible; el subdominio se marca aparte.
+                    const domMain = v.baseDomain ? esc(v.baseDomain) : '—';
+                    const domSub = v.subdomain ? '<span class="text-white/40"> · ' + esc(v.subdomain) + '</span>' : '';
                     vhtml += `<tr>
                         <td style="color:var(--ink)">${esc(v.ip)}</td>
+                        <td style="color:var(--ink-muted)">${domMain}${domSub}</td>
                         <td>${esc(v.device)} ${v.browser ? '<span class="text-white/40">' + esc(v.browser) + '</span>' : ''}</td>
                         <td>${esc(v.requests)}</td>
                         <td class="hidden md:table-cell" style="color:var(--ink-muted)">${uri}</td>
