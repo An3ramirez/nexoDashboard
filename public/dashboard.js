@@ -23,6 +23,15 @@
             const fmtMem = (mb) => mb == null || !Number.isFinite(Number(mb)) ? '--' : Number(mb) >= 1024 ? `${(Number(mb) / 1024).toFixed(1)} GB` : `${Math.round(Number(mb))} MB`;
             const swapConfigured = Number(sys.swapTotalMB) > 0 && sys.swapUsedPct != null;
             setValue('swapHeroDetail', swapConfigured ? `${fmtMem(sys.swapUsedMB)} / ${fmtMem(sys.swapTotalMB)} usados` : 'No configurada');
+            [[ 'ramBar', sys.memUsed, 85, 95 ], [ 'diskBar', sys.diskUsedPct, 85, 95 ]].forEach(([id, value, warnAt, critAt]) => {
+                const bar = document.getElementById(id);
+                if (bar && value != null && Number.isFinite(Number(value))) {
+                    const pct = Math.max(0, Math.min(100, Number(value)));
+                    const level = statusLevel(pct, warnAt, critAt);
+                    bar.style.width = `${pct}%`;
+                    bar.style.background = STATUS_VAR[level];
+                }
+            });
             if (swapConfigured) {
                 const pct = Math.max(0, Math.min(100, Number(sys.swapUsedPct)));
                 const freeMB = Math.max(0, Number(sys.swapTotalMB) - Number(sys.swapUsedMB || 0));
@@ -180,8 +189,11 @@
 
         function renderMetricCharts() {
             const history = activeSeries();
-            const cpu = history.length ? history.map((sample) => sample.cpu) : state.cpuHistory;
-            const ram = history.length ? history.map((sample) => sample.ram) : state.memHistory;
+            const values = (items, key) => (Array.isArray(items) ? items : []).map((sample) =>
+                sample && typeof sample === 'object' ? sample[key] : sample
+            ).filter((value) => value != null && Number.isFinite(Number(value)));
+            const cpu = values(history.length ? history : state.cpuHistory, 'cpu');
+            const ram = values(history.length ? history : state.memHistory, 'ram');
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
             drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
