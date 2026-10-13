@@ -462,7 +462,7 @@ app.delete('/api/public-files/:id', (req, res) => {
 
 // Vistas de primer nivel: comparten la sesión y los datos en vivo, pero cada
 // URL muestra un área de trabajo concreta para evitar una página interminable.
-const DASHBOARD_PAGES = new Set(['/overview', '/performance', '/network', '/visitors', '/gateway', '/infrastructure', '/media', '/processes', '/actions', '/sessions']);
+const DASHBOARD_PAGES = new Set(['/', '/overview', '/performance', '/network', '/visitors', '/gateway', '/infrastructure', '/media', '/processes', '/actions', '/sessions']);
 app.get(Array.from(DASHBOARD_PAGES), (req, res) => res.sendFile('index.html', { root: path.join(__dirname, 'public') }));
 
 // Funcionalidades extendidas (extras.js): sus rutas quedan tras
