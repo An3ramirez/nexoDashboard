@@ -359,6 +359,7 @@ app.get('/app-icon.png', (req, res) => res.sendFile('app-icon.png', { root: path
 app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(__dirname, 'public') }));
 app.get('/ambient-contours.svg', (req, res) => res.sendFile('ambient-contours.svg', { root: path.join(__dirname, 'public') }));
 app.get('/nexo-music-cover.png', (req, res) => res.sendFile('nexo-music-cover.png', { root: path.join(__dirname, 'public') }));
+app.get('/transfer-cover-v2.png', (req, res) => res.sendFile('transfer-cover-v2.png', { root: path.join(__dirname, 'public') }));
 // Tailwind compilado y los scripts extraídos: son estáticos, sin datos, y los
 // necesita el navegador ANTES de tener sesión (la página de login usa CSS y JS).
 // Sin estas rutas quedaban detrás de requireDashAuth y el navegador recibía un

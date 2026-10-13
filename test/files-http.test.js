@@ -17,7 +17,9 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.mkdirSync(path.join(dir, 'public'));
   fs.copyFileSync(path.join(root, 'public', 'ambient-contours.svg'), path.join(dir, 'public', 'ambient-contours.svg'));
   fs.copyFileSync(path.join(root, 'public', 'login.html'), path.join(dir, 'public', 'login.html'));
+  fs.copyFileSync(path.join(root, 'public', 'files.html'), path.join(dir, 'public', 'files.html'));
   fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
+  fs.copyFileSync(path.join(root, 'public', 'transfer-cover-v2.png'), path.join(dir, 'public', 'transfer-cover-v2.png'));
   for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ password: 'sqlite-test-only' }));
@@ -61,7 +63,10 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const loginHtml = await loginPage.text();
   assert.ok(loginHtml.includes('Recursos públicos'));
   assert.ok(loginHtml.includes('Próximamente, más recursos'));
-  assert.equal((loginHtml.match(/class="login-public-link"/g) || []).length, 1);
+  assert.equal((loginHtml.match(/class="login-public-link(?:\s[^"]*)?"/g) || []).length, 2);
+  assert.ok(loginHtml.includes('Transferencia de archivos'));
+  assert.ok(loginHtml.includes('href="/files"'));
+  assert.equal((await fetch(base + '/files')).status, 200);
   assert.ok(loginHtml.includes('href="https://corposoft.net/player/"'));
   assert.ok(loginHtml.includes('Nexo Music'));
   assert.ok(loginHtml.includes('Escuchar gratis'));
@@ -69,6 +74,10 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const musicCover = await fetch(base + '/nexo-music-cover.png');
   assert.equal(musicCover.status, 200);
   assert.ok(musicCover.headers.get('content-type').includes('image/png'));
+  assert.ok(loginHtml.includes('src="/transfer-cover-v2.png"'));
+  const transferCoverV2 = await fetch(base + '/transfer-cover-v2.png');
+  assert.equal(transferCoverV2.status, 200);
+  assert.ok(transferCoverV2.headers.get('content-type').includes('image/png'));
   const background = await fetch(base + '/ambient-contours.svg');
   assert.equal(background.status, 200);
   assert.ok(background.headers.get('content-type').includes('image/svg+xml'));
@@ -103,4 +112,6 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const removed = await json(`/api/public-files/${uploaded.id}`, 'DELETE');
   assert.equal(removed.status, 200);
   assert.equal((await fetch(base + `/files/${uploaded.id}`)).status, 404);
+  assert.equal((await json('/api/logout', 'POST')).status, 200);
+  assert.equal((await json('/api/applications')).status, 401);
 });
