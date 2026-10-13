@@ -2,7 +2,8 @@
 
 Asset integrado: `public/transfer-cover-v2.png`. Imagen original creada con
 generación integrada de imágenes, no CLI. Sustituye la ilustración SVG en la
-tarjeta pública del login. La versión SVG anterior se conserva como alternativa.
+tarjeta pública del login. La versión SVG anterior y su ruta fueron retiradas;
+la única portada activa es `transfer-cover-v2.png`.
 
 Estilo: nube de cristal, documentos flotantes y enlaces, con iluminación azul,
 cian y violeta. El título, botón y límite de 50 GB permanecen en HTML, fuera de

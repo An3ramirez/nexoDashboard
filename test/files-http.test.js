@@ -19,7 +19,6 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.copyFileSync(path.join(root, 'public', 'login.html'), path.join(dir, 'public', 'login.html'));
   fs.copyFileSync(path.join(root, 'public', 'files.html'), path.join(dir, 'public', 'files.html'));
   fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
-  fs.copyFileSync(path.join(root, 'public', 'transfer-cover.svg'), path.join(dir, 'public', 'transfer-cover.svg'));
   fs.copyFileSync(path.join(root, 'public', 'transfer-cover-v2.png'), path.join(dir, 'public', 'transfer-cover-v2.png'));
   for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
@@ -75,9 +74,6 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const musicCover = await fetch(base + '/nexo-music-cover.png');
   assert.equal(musicCover.status, 200);
   assert.ok(musicCover.headers.get('content-type').includes('image/png'));
-  const transferCover = await fetch(base + '/transfer-cover.svg');
-  assert.equal(transferCover.status, 200);
-  assert.ok(transferCover.headers.get('content-type').includes('image/svg+xml'));
   assert.ok(loginHtml.includes('src="/transfer-cover-v2.png"'));
   const transferCoverV2 = await fetch(base + '/transfer-cover-v2.png');
   assert.equal(transferCoverV2.status, 200);
