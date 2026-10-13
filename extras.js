@@ -18,11 +18,11 @@ const path = require('path');
 const http = require('http');
 const https = require('https');
 const si = require('systeminformation');
+const { getStorage } = require('./storage');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const LINKS_PATH = path.join(DATA_DIR, 'links.json');
 const CHECKS_PATH = path.join(DATA_DIR, 'checks.json');
-const SAMPLES_PATH = path.join(DATA_DIR, 'samples.jsonl');
 
 // ===== Utilidades =====
 
@@ -278,46 +278,25 @@ async function getSmart(force = false) {
 // (una muestra por minuto es despreciable incluso en el E-300).
 
 const SAMPLE_EVERY_MS = 60 * 1000;
-const MAX_SAMPLE_LINES = 11000; // ~7.6 días a 1 muestra/min
 
 function appendSample(sample) {
   try {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.appendFileSync(SAMPLES_PATH, JSON.stringify(sample) + '\n');
-  } catch {
-    // disco lleno o sin permiso: el monitoreo en vivo sigue funcionando
+    getStorage().appendSample(sample);
+  } catch (error) {
+    console.error('[storage] No se pudo guardar el historial:', error.message);
   }
 }
 
 function readSamples() {
-  let text = '';
-  try {
-    text = fs.readFileSync(SAMPLES_PATH, 'utf8');
-  } catch {
-    return [];
-  }
-  return text.split('\n').filter(Boolean).map((line) => {
-    try {
-      return JSON.parse(line);
-    } catch {
-      return null;
-    }
-  }).filter((s) => s && typeof s.t === 'number');
+  return getStorage().getSamples();
 }
 
-function getSamples() {
-  return readSamples();
+function getSamples(since) {
+  return getStorage().getSamples(since);
 }
 
 function compactSamplesIfNeeded() {
-  try {
-    const lines = fs.readFileSync(SAMPLES_PATH, 'utf8').split('\n').filter(Boolean);
-    if (lines.length > MAX_SAMPLE_LINES + 1000) {
-      fs.writeFileSync(SAMPLES_PATH, lines.slice(-MAX_SAMPLE_LINES).join('\n') + '\n');
-    }
-  } catch {
-    // si no hay archivo, nada que compactar
-  }
+  getStorage().prune();
 }
 
 async function takeSample() {
@@ -348,11 +327,11 @@ function downsample(samples, bucketMs, maxPoints) {
 }
 
 function getHistorySeries(range) {
-  const now = Date.now();
-  const windowMs = range === '7d' ? 7 * 24 * 3600 * 1000 : 24 * 3600 * 1000;
-  const samples = readSamples().filter((s) => now - s.t <= windowMs);
-  const bucketMs = range === '7d' ? 30 * 60 * 1000 : 5 * 60 * 1000;
-  return { range: range === '7d' ? '7d' : '24h', points: downsample(samples, bucketMs, 400), samples: samples.length };
+  const days = { '24h': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
+  const selected = Object.hasOwn(days, range) ? range : '24h';
+  const windowMs = days[selected] * 24 * 3600 * 1000;
+  const bucketMs = Math.ceil(windowMs / 399);
+  return { range: selected, retentionDays: getStorage().retentionDays, ...getStorage().getHistory(Date.now() - windowMs, bucketMs) };
 }
 
 function historyToCsv() {
@@ -632,8 +611,7 @@ function registerRoutes(app) {
   });
 
   app.get('/api/history', (req, res) => {
-    const range = req.query.range === '7d' ? '7d' : '24h';
-    res.json({ ok: true, ...getHistorySeries(range) });
+    res.json({ ok: true, ...getHistorySeries(req.query.range) });
   });
 
   app.get('/api/history/export', (req, res) => {
