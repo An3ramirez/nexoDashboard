@@ -248,18 +248,23 @@
             const procs = state.processes || [];
             if (procs.length > 0) {
                 const container = document.getElementById('processesContainer');
-                let html = '<div class="overflow-x-auto"><table class="data-table">';
-                html += '<thead><tr><th>Proceso</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead><tbody>';
-                procs.forEach(p => {
-                    html += `<tr>
-                        <td style="color:var(--ink)">${esc(p.name || '?')}</td>
-                        <td>${esc(p.pid)}</td>
-                        <td>${esc(p.cpu)}%</td>
-                        <td>${p.memRss} MB</td>
-                    </tr>`;
-                });
-                html += '</tbody></table></div>';
-                container.innerHTML = html;
+                // Algunas vistas no incluyen el panel de procesos. Los datos
+                // pueden seguir llegando por Socket.IO, pero no deben romper
+                // el renderizado del resto del dashboard.
+                if (container) {
+                    let html = '<div class="overflow-x-auto"><table class="data-table">';
+                    html += '<thead><tr><th>Proceso</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead><tbody>';
+                    procs.forEach(p => {
+                        html += `<tr>
+                            <td style="color:var(--ink)">${esc(p.name || '?')}</td>
+                            <td>${esc(p.pid)}</td>
+                            <td>${esc(p.cpu)}%</td>
+                            <td>${p.memRss} MB</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                }
             }
 
             // ===== Visitantes en tiempo real =====
@@ -568,20 +573,18 @@
         function openModal(action) {
             pendingAction = action;
             modalPassword.value = '';
-            modalConfirmInput.value = '';
-            modalConfirmBtn.disabled = true;
+            if (modalConfirmInput) modalConfirmInput.value = '';
+            modalConfirmBtn.disabled = !modalPassword.value;
             modalConfirmBtn.style.background = 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
-            modalConfirmBtn.style.cursor = 'not-allowed';
+            modalConfirmBtn.style.cursor = modalPassword.value ? 'pointer' : 'not-allowed';
             if (action === 'reboot') {
                 modalTitle.textContent = '♻️ Reiniciar el servidor';
                 modalWarning.textContent = 'El servidor se reiniciará y estará fuera de línea unos minutos. El dashboard y el gateway volverán solos al terminar.';
                 modalHoursRow.classList.add('hidden');
-                modalConfirmWord.textContent = 'REINICIAR';
             } else {
                 modalTitle.textContent = '⏻ Apagar el servidor';
                 modalWarning.textContent = 'El servidor se apagará por completo y se programará su encendido automático (RTC) a la hora elegida.';
                 modalHoursRow.classList.remove('hidden');
-                modalConfirmWord.textContent = 'APAGAR';
             }
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -594,15 +597,14 @@
         }
 
         function checkModalValid() {
-            const word = pendingAction === 'reboot' ? 'REINICIAR' : 'APAGAR';
-            const valid = modalConfirmInput.value === word && modalPassword.value.length > 0;
+            const valid = modalPassword.value.length > 0;
             modalConfirmBtn.disabled = !valid;
             modalConfirmBtn.style.background = valid ? 'var(--status-critical)' : 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
             modalConfirmBtn.style.cursor = valid ? 'pointer' : 'not-allowed';
         }
-        modalConfirmInput.addEventListener('input', checkModalValid);
-        modalPassword.addEventListener('input', checkModalValid);
-        modalCancelBtn.addEventListener('click', closeModal);
+        modalConfirmInput?.addEventListener('input', checkModalValid);
+        modalPassword?.addEventListener('input', checkModalValid);
+        modalCancelBtn?.addEventListener('click', closeModal);
 
         modalConfirmBtn.addEventListener('click', async () => {
             const action = pendingAction;
