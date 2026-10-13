@@ -124,16 +124,36 @@ function savePublicFiles() {
   fs.writeFileSync(tmp, JSON.stringify({ cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, persistenceKeys: publicPersistenceKeys, files: publicFiles }, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, PUBLIC_FILES_META);
 }
+function isPublicFileExpired(file, now = Date.now()) {
+  return !file.persistent && Number(file.expiresAt) > 0 && Number(file.expiresAt) <= now;
+}
 function cleanPublicFiles() {
   if (!publicFileCleanupEnabled) return;
   const now = Date.now();
-  const expired = publicFiles.filter((f) => f.expiresAt && f.expiresAt <= now);
+  const expired = publicFiles.filter((file) => isPublicFileExpired(file, now));
+  if (!expired.length) return;
+  const original = publicFiles;
+  const removedIds = new Set();
   for (const file of expired) {
-    try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); } catch {}
+    if (!/^[a-f0-9]{36}$/.test(String(file.id || ''))) {
+      console.error('[public-files] cleanup skipped an invalid file id');
+      continue;
+    }
+    try {
+      fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`));
+      removedIds.add(file.id);
+    } catch (error) {
+      if (error.code === 'ENOENT') removedIds.add(file.id);
+      else console.error(`[public-files] cleanup could not delete ${file.name || file.id}: ${error.code || error.message}`);
+    }
   }
-  if (expired.length) {
-    publicFiles = publicFiles.filter((f) => !f.expiresAt || f.expiresAt > now);
-    try { savePublicFiles(); } catch {}
+  if (!removedIds.size) return;
+  publicFiles = original.filter((file) => !removedIds.has(file.id));
+  try {
+    savePublicFiles();
+  } catch (error) {
+    publicFiles = original;
+    console.error(`[public-files] cleanup could not save metadata: ${error.code || error.message}`);
   }
 }
 function safeUploadName(value) {
@@ -141,6 +161,14 @@ function safeUploadName(value) {
   return name || 'archivo';
 }
 function hashPersistenceKey(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex'); }
+function findPersistenceKey(value) {
+  if (typeof value !== 'string' || !value) return null;
+  const candidate = Buffer.from(hashPersistenceKey(value), 'hex');
+  return publicPersistenceKeys.find((key) => {
+    if (key.revokedAt || !/^[a-f0-9]{64}$/i.test(String(key.hash || ''))) return false;
+    return crypto.timingSafeEqual(Buffer.from(key.hash, 'hex'), candidate);
+  }) || null;
+}
 function getUploadOrigin(req) {
   const forwarded = String(req.get('cf-connecting-ip') || req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
   return forwarded.slice(0, 80) || 'desconocido';
@@ -153,7 +181,8 @@ app.get('/files', (req, res) => res.sendFile('files.html', { root: path.join(__d
 app.get('/files.js', (req, res) => res.sendFile('files.js', { root: path.join(__dirname, 'public') }));
 app.get('/api/public-files', (req, res) => {
   cleanPublicFiles();
-  res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, maxBytes: PUBLIC_FILE_MAX_BYTES, files: publicFiles.map(({ id, name, size, createdAt, expiresAt, persistent }) => ({ id, name, size, createdAt, expiresAt, persistent })) });
+  const availableFiles = publicFiles.filter((file) => !publicFileCleanupEnabled || !isPublicFileExpired(file));
+  res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, maxBytes: PUBLIC_FILE_MAX_BYTES, files: availableFiles.map(({ id, name, size, createdAt, expiresAt, persistent }) => ({ id, name, size, createdAt, expiresAt, persistent })) });
 });
 app.post('/api/public-files', (req, res) => {
   cleanPublicFiles();
@@ -227,7 +256,7 @@ app.post('/api/public-files/chunk', (req, res) => {
   }
   const state = existing || (() => {
     const id = crypto.randomBytes(18).toString('hex');
-    const created = { id, nextIndex: 0, totalChunks, totalSize: declaredSize, received: 0, tempPath: path.join(PUBLIC_FILES_DIR, `${id}.upload`), finalPath: path.join(PUBLIC_FILES_DIR, `${id}.bin`), name: safeUploadName(req.get('X-File-Name')), expiresAt: Date.now() + publicFileDefaultTtlMinutes * 60 * 1000, uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) } };
+    const created = { id, nextIndex: 0, totalChunks, totalSize: declaredSize, received: 0, ttlMinutes: publicFileDefaultTtlMinutes, tempPath: path.join(PUBLIC_FILES_DIR, `${id}.upload`), finalPath: path.join(PUBLIC_FILES_DIR, `${id}.bin`), name: safeUploadName(req.get('X-File-Name')), uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) } };
     try { fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 }); } catch { return null; }
     activePublicUploads.set(uploadId, created);
     return created;
@@ -261,7 +290,8 @@ app.post('/api/public-files/chunk', (req, res) => {
       return res.json({ ok: true, done: false, received: state.received });
     }
     if (state.received !== state.totalSize) return fail(400, 'El tamaño recibido no coincide con el archivo.');
-    const item = { id: state.id, name: state.name, size: state.received, createdAt: Date.now(), expiresAt: state.expiresAt, persistent: false, persistenceKeyId: null, uploader: state.uploader };
+    const createdAt = Date.now();
+    const item = { id: state.id, name: state.name, size: state.received, createdAt, expiresAt: createdAt + state.ttlMinutes * 60 * 1000, persistent: false, persistenceKeyId: null, uploader: state.uploader };
     try {
       fs.renameSync(state.tempPath, state.finalPath);
       publicFiles.push(item); savePublicFiles(); activePublicUploads.delete(uploadId); finished = true;
@@ -275,6 +305,7 @@ app.get('/files/:id', (req, res, next) => {
   cleanPublicFiles();
   const item = publicFiles.find((f) => f.id === req.params.id);
   if (!item) return res.status(404).send('Archivo no encontrado o caducado.');
+  if (publicFileCleanupEnabled && isPublicFileExpired(item)) return res.status(410).send('El archivo caducó y está pendiente de eliminación.');
   res.setHeader('Cache-Control', 'private, no-store');
   res.download(path.join(PUBLIC_FILES_DIR, `${item.id}.bin`), item.name);
 });
@@ -447,16 +478,47 @@ app.post('/api/public-files/keys', express.json(), (req, res) => {
 app.delete('/api/public-files/keys/:id', (req, res) => {
   const key = publicPersistenceKeys.find((item) => item.id === req.params.id);
   if (!key) return res.status(404).json({ ok: false, error: 'Clave no encontrada.' });
+  const previousRevokedAt = key.revokedAt;
   key.revokedAt = Date.now();
-  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo revocar la clave.' }); }
+  try { savePublicFiles(); } catch {
+    key.revokedAt = previousRevokedAt;
+    return res.status(500).json({ ok: false, error: 'No se pudo revocar la clave.' });
+  }
   res.json({ ok: true });
+});
+app.put('/api/public-files/:id/persistence', express.json(), (req, res) => {
+  const file = publicFiles.find((item) => item.id === req.params.id);
+  if (!file) return res.status(404).json({ ok: false, error: 'Archivo no encontrado.' });
+  const persistent = req.body?.persistent === true;
+  const key = persistent ? findPersistenceKey(req.body?.key) : null;
+  if (persistent && !key) return res.status(403).json({ ok: false, error: 'La clave de persistencia no es válida.' });
+  const previous = { persistent: file.persistent, persistenceKeyId: file.persistenceKeyId, expiresAt: file.expiresAt };
+  file.persistent = persistent;
+  file.persistenceKeyId = key?.id || null;
+  file.expiresAt = persistent ? null : Date.now() + publicFileDefaultTtlMinutes * 60 * 1000;
+  try { savePublicFiles(); } catch (error) {
+    Object.assign(file, previous);
+    return res.status(500).json({ ok: false, error: 'No se pudo actualizar la persistencia del archivo.' });
+  }
+  res.json({ ok: true, file });
 });
 app.delete('/api/public-files/:id', (req, res) => {
   const index = publicFiles.findIndex((item) => item.id === req.params.id);
   if (index === -1) return res.status(404).json({ ok: false, error: 'Archivo no encontrado.' });
   const [file] = publicFiles.splice(index, 1);
-  try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); } catch {}
-  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo actualizar el inventario.' }); }
+  if (!/^[a-f0-9]{36}$/.test(String(file.id || ''))) {
+    publicFiles.splice(index, 0, file);
+    return res.status(400).json({ ok: false, error: 'El identificador del archivo no es válido.' });
+  }
+  try {
+    try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    savePublicFiles();
+  } catch (error) {
+    publicFiles.splice(index, 0, file);
+    console.error(`[public-files] manual delete failed for ${file.name || file.id}: ${error.code || error.message}`);
+    return res.status(500).json({ ok: false, error: 'No se pudo eliminar el archivo; se conserva en el inventario para volver a intentarlo.' });
+  }
   res.json({ ok: true });
 });
 
