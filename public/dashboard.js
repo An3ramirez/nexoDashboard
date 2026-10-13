@@ -195,7 +195,7 @@
                 q('playerArtist').textContent = '--';
             }
 
-            if (sys.cpu != null) { q('cpu').textContent = sys.cpu + '%'; applyStatus('cpu', sys.cpu, 70, 90); }
+            if (sys.cpu != null) { q('cpu').textContent = sys.cpu + '%'; applyStatus('cpu', sys.cpu, 85, 95); }
             if (sys.cpuTemp) q('temp').textContent = '🌡️ ' + sys.cpuTemp + '°C';
 
             if (sys.memUsed != null) { q('ram').textContent = sys.memUsed + '%'; applyStatus('ram', sys.memUsed, 80, 92); }

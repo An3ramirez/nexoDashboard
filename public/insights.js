@@ -19,7 +19,8 @@ window.NexoInsights = {
     const facts = [];
     const add = (label, value, note, tone) => facts.push({ label, value: value == null ? '--' : String(value), note: note || '', tone: tone || '' });
     if (anchor === 'sec-perf') {
-      add('CPU', sys.cpu != null ? `${sys.cpu}%` : null, sys.cpu >= 90 ? 'presión crítica' : 'carga actual', sys.cpu >= 90 ? 'critical' : '');
+      const cpuCritical = sys.cpu >= 95, cpuWarning = sys.cpu >= 85 && !cpuCritical;
+      add('CPU', sys.cpu != null ? `${sys.cpu}%` : null, cpuCritical ? 'presión crítica' : cpuWarning ? 'carga alta' : 'carga actual', cpuCritical ? 'critical' : cpuWarning ? 'warning' : '');
       add('Temperatura', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : null, sys.cpuTemp >= 75 ? 'vigilar refrigeración' : 'dentro del umbral', sys.cpuTemp >= 85 ? 'critical' : sys.cpuTemp >= 75 ? 'warning' : '');
       add('RAM disponible', sys.memAvailGB != null ? `${sys.memAvailGB} GB` : null, `${sys.memUsedGB ?? '--'} GB en uso`);
       add('Swap', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada', sys.swapTotalMB ? `${sys.swapUsedMB}/${sys.swapTotalMB} MB usados` : '');
