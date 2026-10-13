@@ -192,45 +192,44 @@
             const values = (items, key) => (Array.isArray(items) ? items : []).map((sample) =>
                 sample && typeof sample === 'object' ? sample[key] : sample
             ).filter((value) => value != null && Number.isFinite(Number(value)));
-            const cpu = values(history.length ? history : state.cpuHistory, 'cpu');
-            const ram = values(history.length ? history : state.memHistory, 'ram');
+            const cpu = values(history, 'cpu');
+            const ram = values(history, 'ram');
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
             drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
             drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100);
-            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: (state.swapHistory || []).map((sample) => sample.pct), color: color('--status-warning') }], 100);
+            const swap = state.swapHistory || [];
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: swap.map((sample) => sample.pct), color: color('--status-warning') }], 100);
+            setRangeLabels('swap', swap);
             drawSeriesChart(document.querySelector('[data-chart="history"]'), [
                 { values: history.map((sample) => sample.cpu), color: cpuColor },
                 { values: history.map((sample) => sample.ram), color: ramColor },
             ], 100);
+            setRangeLabels('cpu', history);
+            setRangeLabels('ram', history);
+            setRangeLabels('history', history);
             const net = state.io?.net?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="net"]'), [
                 { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
                 { values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
             ]);
+            setRangeLabels('net', net);
             const disk = state.io?.disk?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="dio"]'), [
                 { values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
                 { values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
             ]);
+            setRangeLabels('dio', disk);
         }
 
-        // Etiquetas de tiempo relativo bajo cada sparkline ("-12 min" … "ahora").
-        function setRangeLabels(samples) {
-            const fmt = (agoMs) => {
-                const m = Math.round(agoMs / 60000);
-                if (m <= 0) return 'ahora';
-                if (m < 60) return '-' + m + ' min';
-                const h = Math.round(m / 60);
-                return '-' + h + ' h';
-            };
-            const first = samples.length ? samples[0].t : null;
-            ['cpu', 'ram'].forEach(kind => {
-                const wrap = document.querySelector(`[data-sparkrange="${kind}"]`);
-                if (!wrap) return;
-                if (first == null) { wrap.innerHTML = '<span>--</span><span>--</span>'; return; }
-                wrap.innerHTML = `<span>${fmt(Date.now() - first)}</span><span>ahora</span>`;
-            });
+        // Muestra las fechas locales de los extremos realmente graficados.
+        function setRangeLabels(kind, samples) {
+            const wrap = document.querySelector(`[data-sparkrange="${kind}"]`);
+            if (!wrap) return;
+            const timed = (Array.isArray(samples) ? samples : []).filter(sample => sample && Number.isFinite(Number(sample.t)) && Number.isFinite(new Date(Number(sample.t)).getTime())).sort((a, b) => Number(a.t) - Number(b.t));
+            if (!timed.length) { wrap.textContent = ''; return; }
+            const fmt = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+            wrap.textContent = `${fmt.format(new Date(Number(timed[0].t)))} → ${fmt.format(new Date(Number(timed[timed.length - 1].t)))}`;
         }
 
         // Serie activa según el selector 1 h / 24 h.
@@ -238,9 +237,7 @@
             const hist = state.history || {};
             const daily = hist.daily || [];
             const short = hist.short || [];
-            if (state.range === 'daily' && daily.length >= 2) return daily;
-            if (short.length >= 2) return short;
-            return daily;
+            return state.range === 'daily' ? daily : short;
         }
 
         function render() {
@@ -334,9 +331,10 @@
 
             if (Array.isArray(sys.cpuCores) && sys.cpuCores.length) {
                 const container = document.getElementById('coreBars');
-                container.innerHTML = sys.cpuCores.map(load => {
+                container.innerHTML = sys.cpuCores.map((load, index) => {
                     const level = statusLevel(load, 70, 90);
-                    return `<div class="core-bar-track"><div class="core-bar-fill" style="width:${Math.min(load,100)}%;background:${STATUS_VAR[level]}"></div></div>`;
+                    const pct = Math.max(0, Math.min(100, Number(load) || 0));
+                    return `<div style="display:grid;grid-template-columns:34px 1fr 42px;align-items:center;gap:8px;font-size:11px"><span class="faint">C${index + 1}</span><div class="core-bar-track"><div class="core-bar-fill" style="width:${pct}%;background:${STATUS_VAR[level]}"></div></div><span style="text-align:right">${Math.round(pct)}%</span></div>`;
                 }).join('');
             }
 
