@@ -93,7 +93,10 @@ function verifyPassword(password) {
 // Los ficheros no viven bajo /public: se sirven únicamente mediante un id
 // aleatorio y se eliminan al caducar. Así no se pueden adivinar rutas ni usar
 // nombres suministrados por el navegador para escapar del directorio.
-const PUBLIC_FILES_DIR = path.join(__dirname, 'data', 'public-files');
+// En producción se fija PUBLIC_FILES_DIR fuera del checkout para que las
+// cargas no se mezclen con el código ni se pierdan al actualizarlo. Localmente
+// se conserva una carpeta de desarrollo dentro del proyecto.
+const PUBLIC_FILES_DIR = path.resolve(process.env.PUBLIC_FILES_DIR || path.join(__dirname, 'data', 'public-files'));
 const PUBLIC_FILES_META = path.join(PUBLIC_FILES_DIR, 'index.json');
 // Las cargas grandes se escriben en streaming (nunca se concentran en RAM).
 // El límite es 50 GiB binarios; la UI lo comunica como 50 GB.
@@ -127,7 +130,7 @@ function cleanPublicFiles() {
     try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); } catch {}
   }
   if (expired.length) {
-    publicFiles = publicFiles.filter((f) => f.expiresAt > now);
+    publicFiles = publicFiles.filter((f) => !f.expiresAt || f.expiresAt > now);
     try { savePublicFiles(); } catch {}
   }
 }
