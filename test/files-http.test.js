@@ -16,6 +16,8 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.mkdirSync(path.join(dir, 'data'));
   fs.mkdirSync(path.join(dir, 'public'));
   fs.copyFileSync(path.join(root, 'public', 'ambient-contours.svg'), path.join(dir, 'public', 'ambient-contours.svg'));
+  fs.copyFileSync(path.join(root, 'public', 'login.html'), path.join(dir, 'public', 'login.html'));
+  fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
   for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ password: 'sqlite-test-only' }));
@@ -54,6 +56,19 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
     assert.equal(result.status, 200); cookie = result.response.headers.get('set-cookie').split(';')[0];
   }
   await start();
+  const loginPage = await fetch(base + '/login');
+  assert.equal(loginPage.status, 200);
+  const loginHtml = await loginPage.text();
+  assert.ok(loginHtml.includes('Recursos públicos'));
+  assert.ok(loginHtml.includes('Próximamente, más recursos'));
+  assert.equal((loginHtml.match(/class="login-public-link"/g) || []).length, 1);
+  assert.ok(loginHtml.includes('href="https://corposoft.net/player/"'));
+  assert.ok(loginHtml.includes('Nexo Music'));
+  assert.ok(loginHtml.includes('Escuchar gratis'));
+  assert.ok(!loginHtml.includes('PHP'));
+  const musicCover = await fetch(base + '/nexo-music-cover.png');
+  assert.equal(musicCover.status, 200);
+  assert.ok(musicCover.headers.get('content-type').includes('image/png'));
   const background = await fetch(base + '/ambient-contours.svg');
   assert.equal(background.status, 200);
   assert.ok(background.headers.get('content-type').includes('image/svg+xml'));
