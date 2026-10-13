@@ -101,8 +101,10 @@ const PUBLIC_FILES_META = path.join(PUBLIC_FILES_DIR, 'index.json');
 // Las cargas grandes se escriben en streaming (nunca se concentran en RAM).
 // El límite es 50 GiB binarios; la UI lo comunica como 50 GB.
 const PUBLIC_FILE_MAX_BYTES = 50 * 1024 * 1024 * 1024;
+const PUBLIC_FILE_CHUNK_MAX_BYTES = 40 * 1024 * 1024;
 const PUBLIC_FILE_TTL_MIN = 24 * 60;
 let publicFiles = [];
+const activePublicUploads = new Map();
 let publicFileCleanupEnabled = true;
 let publicPersistenceKeys = [];
 let publicFileDefaultTtlMinutes = 60;
@@ -201,6 +203,70 @@ app.post('/api/public-files', (req, res) => {
       done = true;
       res.status(201).json({ ok: true, file: item, downloadUrl: `/files/${id}` });
     } catch { finishWithError(500, 'No se pudo finalizar el archivo.'); }
+  });
+  req.pipe(output);
+});
+// Las redes intermedias suelen limitar una petición individual (aunque el
+// servidor admita 50 GB). Esta ruta recibe fragmentos pequeños y los concatena
+// directamente en el archivo temporal del disco.
+app.post('/api/public-files/chunk', (req, res) => {
+  cleanPublicFiles();
+  const uploadId = String(req.get('X-Upload-Id') || '');
+  const index = Number(req.get('X-Chunk-Index'));
+  const totalChunks = Number(req.get('X-Chunk-Total'));
+  const declaredSize = Number(req.get('X-File-Size'));
+  if (!/^[a-f0-9]{24,64}$/.test(uploadId) || !Number.isInteger(index) || !Number.isInteger(totalChunks) || index < 0 || index >= totalChunks || !Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > PUBLIC_FILE_MAX_BYTES) {
+    req.resume();
+    return res.status(400).json({ ok: false, error: 'Datos de fragmento inválidos.' });
+  }
+  const existing = activePublicUploads.get(uploadId);
+  if (index === 0 && existing) return res.status(409).json({ ok: false, error: 'La carga ya está en curso.' });
+  if (index > 0 && (!existing || existing.nextIndex !== index || existing.totalChunks !== totalChunks || existing.totalSize !== declaredSize)) {
+    req.resume();
+    return res.status(409).json({ ok: false, error: 'Fragmento fuera de orden; reinicia la carga.' });
+  }
+  const state = existing || (() => {
+    const id = crypto.randomBytes(18).toString('hex');
+    const created = { id, nextIndex: 0, totalChunks, totalSize: declaredSize, received: 0, tempPath: path.join(PUBLIC_FILES_DIR, `${id}.upload`), finalPath: path.join(PUBLIC_FILES_DIR, `${id}.bin`), name: safeUploadName(req.get('X-File-Name')), expiresAt: Date.now() + publicFileDefaultTtlMinutes * 60 * 1000, uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) } };
+    try { fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 }); } catch { return null; }
+    activePublicUploads.set(uploadId, created);
+    return created;
+  })();
+  if (!state) { req.resume(); return res.status(500).json({ ok: false, error: 'No se pudo preparar el almacenamiento.' }); }
+  let chunkBytes = 0;
+  let finished = false;
+  const output = fs.createWriteStream(state.tempPath, { flags: index === 0 ? 'wx' : 'a', mode: 0o600 });
+  const fail = (status, error) => {
+    if (finished) return;
+    finished = true;
+    activePublicUploads.delete(uploadId);
+    try { fs.unlinkSync(state.tempPath); } catch {}
+    if (!res.headersSent) res.status(status).json({ ok: false, error });
+  };
+  req.on('data', (part) => {
+    chunkBytes += part.length;
+    if (chunkBytes > PUBLIC_FILE_CHUNK_MAX_BYTES && !finished) {
+      req.unpipe(output); output.destroy(); req.resume(); fail(413, 'El fragmento supera el límite permitido.');
+    }
+  });
+  req.once('aborted', () => fail(400, 'La subida fue cancelada.'));
+  req.once('error', () => fail(400, 'La subida falló.'));
+  output.once('error', () => fail(500, 'No se pudo guardar el fragmento.'));
+  output.once('finish', () => {
+    if (finished) return;
+    state.received += chunkBytes;
+    state.nextIndex += 1;
+    if (state.nextIndex < state.totalChunks) {
+      finished = true;
+      return res.json({ ok: true, done: false, received: state.received });
+    }
+    if (state.received !== state.totalSize) return fail(400, 'El tamaño recibido no coincide con el archivo.');
+    const item = { id: state.id, name: state.name, size: state.received, createdAt: Date.now(), expiresAt: state.expiresAt, persistent: false, persistenceKeyId: null, uploader: state.uploader };
+    try {
+      fs.renameSync(state.tempPath, state.finalPath);
+      publicFiles.push(item); savePublicFiles(); activePublicUploads.delete(uploadId); finished = true;
+      res.status(201).json({ ok: true, done: true, file: item, downloadUrl: `/files/${state.id}` });
+    } catch { fail(500, 'No se pudo finalizar el archivo.'); }
   });
   req.pipe(output);
 });

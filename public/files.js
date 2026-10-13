@@ -13,15 +13,19 @@ function setProgress(percent, label) {
   $('uploadProgressLabel').textContent = label;
   $('uploadProgressBar').parentElement.setAttribute('aria-valuenow', String(value));
 }
-function uploadFile(file) {
+function uploadChunk(file, uploadId, index, totalChunks, offset, chunk, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/public-files');
+    xhr.open('POST', '/api/public-files/chunk');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.setRequestHeader('X-File-Name', file.name);
+    xhr.setRequestHeader('X-Upload-Id', uploadId);
+    xhr.setRequestHeader('X-Chunk-Index', String(index));
+    xhr.setRequestHeader('X-Chunk-Total', String(totalChunks));
+    xhr.setRequestHeader('X-File-Size', String(file.size));
     xhr.upload.onprogress = (event) => {
       if (!event.lengthComputable) return;
-      setProgress((event.loaded / event.total) * 100, `Subiendo ${fmtBytes(event.loaded)} de ${fmtBytes(event.total)}…`);
+      onProgress(offset + event.loaded, file.size);
     };
     xhr.onerror = () => reject(new Error('La conexión se interrumpió durante la subida.'));
     xhr.onabort = () => reject(new Error('La subida fue cancelada.'));
@@ -29,12 +33,25 @@ function uploadFile(file) {
       const type = xhr.getResponseHeader('content-type') || '';
       let data;
       try { data = type.includes('application/json') ? JSON.parse(xhr.responseText) : null; } catch {}
-      if (!data) return reject(new Error(`La carga fue rechazada por un servidor intermedio (HTTP ${xhr.status || 'sin respuesta'}). Revisa el límite de carga del proxy.`));
+      if (!data) return reject(new Error(`La carga fue rechazada por un servidor intermedio (HTTP ${xhr.status || 'sin respuesta'}).`));
       if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error || `No se pudo subir el archivo (HTTP ${xhr.status}).`));
       resolve(data);
     };
-    xhr.send(file);
+    xhr.send(chunk);
   });
+}
+async function uploadFile(file) {
+  const chunkSize = 32 * 1024 * 1024;
+  const totalChunks = Math.ceil(file.size / chunkSize);
+  const uploadId = crypto.randomUUID ? crypto.randomUUID().replaceAll('-', '') : Array.from(crypto.getRandomValues(new Uint8Array(18)), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  let offset = 0;
+  let result;
+  for (let index = 0; index < totalChunks; index += 1) {
+    const chunk = file.slice(offset, Math.min(file.size, offset + chunkSize));
+    result = await uploadChunk(file, uploadId, index, totalChunks, offset, chunk, (loaded, total) => setProgress((loaded / total) * 100, `Subiendo ${fmtBytes(loaded)} de ${fmtBytes(total)}…`));
+    offset += chunk.size;
+  }
+  return result;
 }
 function until(ts) { const m = Math.max(0, Math.ceil((ts - Date.now()) / 60000)); return m < 60 ? `${m} min` : `${Math.ceil(m / 60)} h`; }
 function expiry(ts) { return ts ? `Expira en ${until(ts)} · ${new Date(ts).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' })}` : 'Sin caducidad'; }
