@@ -2,3 +2,7 @@ node_modules/
 auth.json
 *.log
 .env
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.pre-sqlite.bak

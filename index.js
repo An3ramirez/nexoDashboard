@@ -12,6 +12,8 @@ const fs = require('fs');
 // historial persistente, alertas, procesos, logs, checks, quick links).
 // Solo AGREGA claves al payload 'stats' y rutas nuevas; no toca lo existente.
 const extras = require('./extras');
+const { getStorage } = require('./storage');
+const { registerApplicationRoutes } = require('./applications');
 
 const app = express();
 app.disable('x-powered-by');
@@ -97,7 +99,6 @@ function verifyPassword(password) {
 // cargas no se mezclen con el código ni se pierdan al actualizarlo. Localmente
 // se conserva una carpeta de desarrollo dentro del proyecto.
 const PUBLIC_FILES_DIR = path.resolve(process.env.PUBLIC_FILES_DIR || path.join(__dirname, 'data', 'public-files'));
-const PUBLIC_FILES_META = path.join(PUBLIC_FILES_DIR, 'index.json');
 // Las cargas grandes se escriben en streaming (nunca se concentran en RAM).
 // El límite es 50 GiB binarios; la UI lo comunica como 50 GB.
 const PUBLIC_FILE_MAX_BYTES = 50 * 1024 * 1024 * 1024;
@@ -110,19 +111,15 @@ let publicPersistenceKeys = [];
 let publicFileDefaultTtlMinutes = 60;
 
 function loadPublicFiles() {
-  try {
-    const raw = JSON.parse(fs.readFileSync(PUBLIC_FILES_META, 'utf8'));
-    publicFiles = Array.isArray(raw.files) ? raw.files : [];
-    publicFileCleanupEnabled = raw.cleanupEnabled !== false;
-    publicPersistenceKeys = Array.isArray(raw.persistenceKeys) ? raw.persistenceKeys : [];
-    publicFileDefaultTtlMinutes = Math.min(PUBLIC_FILE_TTL_MIN, Math.max(5, Number(raw.defaultTtlMinutes) || 60));
-  } catch { publicFiles = []; }
+  // Fallar cerrado ante corrupción/migración fallida, nunca fingir lista vacía.
+  const raw = getStorage().loadSnapshot();
+  publicFiles = raw.files;
+  publicFileCleanupEnabled = raw.cleanupEnabled;
+  publicPersistenceKeys = raw.persistenceKeys;
+  publicFileDefaultTtlMinutes = raw.defaultTtlMinutes;
 }
 function savePublicFiles() {
-  fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 });
-  const tmp = `${PUBLIC_FILES_META}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, persistenceKeys: publicPersistenceKeys, files: publicFiles }, null, 2), { mode: 0o600 });
-  fs.renameSync(tmp, PUBLIC_FILES_META);
+  getStorage().saveSnapshot({ cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, persistenceKeys: publicPersistenceKeys, files: publicFiles });
 }
 function isPublicFileExpired(file, now = Date.now()) {
   return !file.persistent && Number(file.expiresAt) > 0 && Number(file.expiresAt) <= now;
@@ -231,7 +228,11 @@ app.post('/api/public-files', (req, res) => {
       publicFiles.push(item); savePublicFiles();
       done = true;
       res.status(201).json({ ok: true, file: item, downloadUrl: `/files/${id}` });
-    } catch { finishWithError(500, 'No se pudo finalizar el archivo.'); }
+    } catch {
+      loadPublicFiles();
+      try { fs.unlinkSync(finalPath); } catch {}
+      finishWithError(500, 'No se pudo finalizar el archivo.');
+    }
   });
   req.pipe(output);
 });
@@ -296,7 +297,11 @@ app.post('/api/public-files/chunk', (req, res) => {
       fs.renameSync(state.tempPath, state.finalPath);
       publicFiles.push(item); savePublicFiles(); activePublicUploads.delete(uploadId); finished = true;
       res.status(201).json({ ok: true, done: true, file: item, downloadUrl: `/files/${state.id}` });
-    } catch { fail(500, 'No se pudo finalizar el archivo.'); }
+    } catch {
+      loadPublicFiles();
+      try { fs.unlinkSync(state.finalPath); } catch {}
+      fail(500, 'No se pudo finalizar el archivo.');
+    }
   });
   req.pipe(output);
 });
@@ -352,6 +357,7 @@ function getCookie(req, name) {
 app.get('/login', (req, res) => res.sendFile('login.html', { root: path.join(__dirname, 'public') }));
 app.get('/app-icon.png', (req, res) => res.sendFile('app-icon.png', { root: path.join(__dirname, 'public') }));
 app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(__dirname, 'public') }));
+app.get('/ambient-contours.svg', (req, res) => res.sendFile('ambient-contours.svg', { root: path.join(__dirname, 'public') }));
 // Tailwind compilado y los scripts extraídos: son estáticos, sin datos, y los
 // necesita el navegador ANTES de tener sesión (la página de login usa CSS y JS).
 // Sin estas rutas quedaban detrás de requireDashAuth y el navegador recibía un
@@ -524,12 +530,13 @@ app.delete('/api/public-files/:id', (req, res) => {
 
 // Vistas de primer nivel: comparten la sesión y los datos en vivo, pero cada
 // URL muestra un área de trabajo concreta para evitar una página interminable.
-const DASHBOARD_PAGES = new Set(['/', '/overview', '/performance', '/network', '/visitors', '/gateway', '/infrastructure', '/media', '/processes', '/actions', '/sessions']);
+const DASHBOARD_PAGES = new Set(['/', '/overview', '/apps', '/performance', '/network', '/visitors', '/gateway', '/infrastructure', '/media', '/processes', '/actions', '/sessions']);
 app.get(Array.from(DASHBOARD_PAGES), (req, res) => res.sendFile('index.html', { root: path.join(__dirname, 'public') }));
 
 // Funcionalidades extendidas (extras.js): sus rutas quedan tras
 // requireDashAuth, así que exigen sesión como todo lo demás.
 extras.registerRoutes(app);
+registerApplicationRoutes(app, getStorage());
 extras.boot();
 
 app.post('/api/change-password', express.json(), (req, res) => {
@@ -1138,7 +1145,7 @@ const HISTORY_LEN = 30;
 // Historial en memoria complementado con muestras persistentes al arrancar.
 const SHORT_WINDOW_MS = 60 * 60 * 1000;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const startupSamples = extras.getSamples().filter(sample =>
+const startupSamples = extras.getSamples(Date.now() - DAILY_WINDOW_MS).filter(sample =>
     Number.isFinite(sample.t) && Number.isFinite(Number(sample.cpu)) && Number.isFinite(Number(sample.ram))
 ).map(sample => ({ t: sample.t, cpu: Number(sample.cpu), ram: Number(sample.ram) })).sort((a, b) => a.t - b.t);
 const startupNow = Date.now();

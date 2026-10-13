@@ -145,11 +145,19 @@
                     stroke-linecap="round" stroke-linejoin="round"></polyline>`;
         }
 
-        function drawSeriesChart(svg, tracks, fixedMax = null) {
+        function drawSeriesChart(svg, tracks, fixedMax = null, samples = [], unit = '%') {
             if (!svg) return;
             const box = (svg.getAttribute('viewBox') || '0 0 300 90').split(/\s+/).map(Number);
-            const w = box[2] || 300, h = box[3] || 90;
-            const pad = { left: 4, right: 5, top: 5, bottom: 6 };
+            const rect = svg.getBoundingClientRect();
+            const w = Math.max(220, Math.round(rect.width || box[2] || 300));
+            const h = Math.round(rect.height || box[3] || 140);
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            const times = samples.map(sample => Number(sample?.t));
+            const validTimes = times.filter(Number.isFinite);
+            const start = validTimes.length ? Math.min(...validTimes) : null;
+            const end = validTimes.length ? Math.max(...validTimes) : null;
+            const showDate = start !== null && end - start >= 86400000;
+            const pad = { left: 52, right: 14, top: 18, bottom: showDate ? 43 : 27 };
             const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
             const ns = 'http://www.w3.org/2000/svg';
             const make = (name, attrs) => {
@@ -157,27 +165,55 @@
                 Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
                 return node;
             };
+            const text = (value, x, y, anchor = 'end') => {
+                const node = make('text', { x, y, 'text-anchor': anchor, class: 'chart-axis' });
+                node.textContent = value; svg.appendChild(node); return node;
+            };
             svg.replaceChildren();
+            const all = tracks.flatMap(track => track.values.filter(value => value != null).map(Number).filter(Number.isFinite));
+            const peak = all.length ? Math.max(1, ...all) * 1.15 : 1;
+            const magnitude = 10 ** Math.floor(Math.log10(peak));
+            const max = fixedMax || [1, 2, 5, 10].map(step => step * magnitude).find(value => value >= peak);
+            text(unit, pad.left - 8, 11);
+            const number = new Intl.NumberFormat('es-CO', { maximumFractionDigits: max < 2 ? 2 : 1, notation: max >= 10000 ? 'compact' : 'standard' });
             for (let i = 0; i <= 4; i++) {
                 const y = pad.top + plotH * i / 4;
                 svg.appendChild(make('line', { x1: pad.left, y1: y, x2: w - pad.right, y2: y, class: 'chart-grid' }));
+                text(number.format(max * (1 - i / 4)), pad.left - 8, y + 3);
             }
-            const all = tracks.flatMap((track) => track.values.map(Number).filter(Number.isFinite));
+            const bottom = pad.top + plotH;
+            svg.appendChild(make('line', { x1: pad.left, y1: pad.top, x2: pad.left, y2: bottom, class: 'chart-rule' }));
+            svg.appendChild(make('line', { x1: pad.left, y1: bottom, x2: w - pad.right, y2: bottom, class: 'chart-rule' }));
+            if (start !== null) {
+                const count = end === start ? 1 : Math.max(2, Math.min(6, Math.floor(plotW / 100) + 1));
+                const timeFormat = new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+                const dateFormat = new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                for (let i = 0; i < count; i++) {
+                    const ratio = count === 1 ? 0.5 : i / (count - 1);
+                    const x = pad.left + plotW * ratio;
+                    const date = new Date(start + (end - start) * ratio);
+                    const anchor = count === 1 ? 'middle' : i === 0 ? 'start' : i === count - 1 ? 'end' : 'middle';
+                    svg.appendChild(make('line', { x1: x, y1: pad.top, x2: x, y2: bottom, class: 'chart-grid chart-grid-vertical' }));
+                    svg.appendChild(make('line', { x1: x, y1: bottom, x2: x, y2: bottom + 4, class: 'chart-rule' }));
+                    text(timeFormat.format(date), x, bottom + 17, anchor);
+                    if (showDate) text(dateFormat.format(date), x, bottom + 31, anchor);
+                }
+            }
             if (!all.length) {
                 const label = make('text', { x: w / 2, y: h / 2 + 4, 'text-anchor': 'middle', class: 'chart-axis' });
                 label.textContent = 'Esperando muestras';
                 svg.appendChild(label);
                 return;
             }
-            const max = fixedMax || Math.max(1, Math.ceil(Math.max(...all) * 1.15));
             tracks.forEach((track) => {
-                const values = track.values.map(Number).filter(Number.isFinite);
-                if (!values.length) return;
-                const plotted = values.length === 1 ? [values[0], values[0]] : values;
-                const points = plotted.map((value, index) => ({
-                    x: pad.left + plotW * index / Math.max(1, plotted.length - 1),
-                    y: pad.top + plotH - Math.max(0, Math.min(max, value)) / max * plotH,
-                }));
+                const points = track.values.map((value, index) => {
+                    if (value == null || !Number.isFinite(Number(value))) return null;
+                    const ratio = start !== null && Number.isFinite(times[index])
+                        ? end === start ? 0.5 : (times[index] - start) / (end - start)
+                        : track.values.length === 1 ? 0.5 : index / (track.values.length - 1);
+                    return { x: pad.left + plotW * ratio, y: bottom - Math.max(0, Math.min(max, Number(value))) / max * plotH };
+                }).filter(Boolean);
+                if (!points.length) return;
                 const line = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
                 const area = `${line} L${points[points.length - 1].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} L${points[0].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
                 svg.appendChild(make('path', { d: area, fill: track.color, opacity: '0.1' }));
@@ -191,34 +227,35 @@
             const history = activeSeries();
             const values = (items, key) => (Array.isArray(items) ? items : []).map((sample) =>
                 sample && typeof sample === 'object' ? sample[key] : sample
-            ).filter((value) => value != null && Number.isFinite(Number(value)));
+            );
             const cpu = values(history, 'cpu');
             const ram = values(history, 'ram');
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
-            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
-            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100, history);
+            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100, history);
             const swap = state.swapHistory || [];
-            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: swap.map((sample) => sample.pct), color: color('--status-warning') }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: swap.map((sample) => sample.pct), color: color('--status-warning') }], 100, swap);
             setRangeLabels('swap', swap);
+            const historical = state.historicalPoints || history;
             drawSeriesChart(document.querySelector('[data-chart="history"]'), [
-                { values: history.map((sample) => sample.cpu), color: cpuColor },
-                { values: history.map((sample) => sample.ram), color: ramColor },
-            ], 100);
+                { values: historical.map((sample) => sample.cpu), color: cpuColor },
+                { values: historical.map((sample) => sample.ram), color: ramColor },
+            ], 100, historical);
             setRangeLabels('cpu', history);
             setRangeLabels('ram', history);
-            setRangeLabels('history', history);
+            setRangeLabels('history', historical);
             const net = state.io?.net?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="net"]'), [
                 { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
                 { values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
-            ]);
+            ], null, net, 'KB/s');
             setRangeLabels('net', net);
             const disk = state.io?.disk?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="dio"]'), [
                 { values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
                 { values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
-            ]);
+            ], null, disk, 'KB/s');
             setRangeLabels('dio', disk);
         }
 
@@ -513,6 +550,35 @@
             });
         });
         document.querySelector('#rangeToggle .range-btn')?.classList.add('range-btn-active');
+
+        // El rango histórico es independiente de las gráficas en vivo.
+        let historyRequest = 0;
+        async function loadHistoricalRange(range) {
+            const request = ++historyRequest;
+            const status = document.getElementById('historyStatus');
+            if (status) status.textContent = 'Cargando histórico…';
+            try {
+                const response = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
+                if (!response.ok) throw new Error('No se pudo consultar el histórico');
+                const data = await response.json();
+                if (request !== historyRequest) return;
+                if (!data.ok || !Array.isArray(data.points)) throw new Error('Respuesta de histórico inválida');
+                state.historicalPoints = data.points;
+                document.querySelectorAll('[data-hist]').forEach(button => {
+                    const selected = button.dataset.hist === data.range;
+                    button.classList.toggle('range-btn-active', selected);
+                    button.setAttribute('aria-pressed', String(selected));
+                });
+                if (status) status.textContent = `${data.samples} muestras · retención ${data.retentionDays} días`;
+                renderMetricCharts();
+            } catch (error) {
+                if (request === historyRequest && status) status.textContent = error.message;
+            }
+        }
+        document.querySelectorAll('[data-hist]').forEach(button => {
+            button.addEventListener('click', () => loadHistoricalRange(button.dataset.hist));
+        });
+        if (document.querySelector('[data-hist]') && ['/', '/overview'].includes(location.pathname)) loadHistoricalRange('24h');
 
         // ===== Reproductor (MPD) =====
         function postPlayer(path, body) {

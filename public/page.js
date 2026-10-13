@@ -6,10 +6,11 @@
   // telemetría. Activarlas al cargar mantiene visibles todas las páginas.
   document.querySelectorAll('.reveal').forEach((element) => element.classList.add('in'));
 
-  const page = ({ '/': 'overview', '/overview': 'overview', '/performance': 'performance', '/network': 'network', '/visitors': 'visitors', '/gateway':'gateway', '/infrastructure':'infrastructure', '/media':'media', '/processes':'processes', '/actions':'actions', '/sessions':'sessions' })[location.pathname] || 'overview';
-  const paths = { overview:'/overview', performance:'/performance', network:'/network', visitors:'/visitors', gateway:'/gateway', infrastructure:'/infrastructure', media:'/media', processes:'/processes', actions:'/actions', sessions:'/sessions' };
+  const page = ({ '/': 'overview', '/overview': 'overview', '/apps': 'apps', '/performance': 'performance', '/network': 'network', '/visitors': 'visitors', '/gateway':'gateway', '/infrastructure':'infrastructure', '/media':'media', '/processes':'processes', '/actions':'actions', '/sessions':'sessions' })[location.pathname] || 'overview';
+  const paths = { overview:'/overview', apps:'/apps', performance:'/performance', network:'/network', visitors:'/visitors', gateway:'/gateway', infrastructure:'/infrastructure', media:'/media', processes:'/processes', actions:'/actions', sessions:'/sessions' };
   const keep = {
     overview: ['sec-overview', 'sec-perf', 'sec-quick'],
+    apps: ['sec-apps'],
     performance: ['sec-files'], network: ['sec-net'], visitors: ['sec-visitors'],
     gateway: ['sec-gateway'], infrastructure: ['sec-infra'], media: ['sec-media'],
     processes: ['sec-procs'], actions: ['sec-actions'], sessions: ['sec-sessions'],
@@ -44,5 +45,5 @@
     button.classList.toggle('active', button.dataset.page === page);
     button.addEventListener('click', () => { location.href = paths[button.dataset.page] || '/overview'; });
   });
-  document.title = ({ overview:'Resumen', performance:'Archivos', network:'Red y discos', visitors:'Visitantes', gateway:'Gateway', infrastructure:'Infraestructura', media:'Multimedia', processes:'Procesos', actions:'Acciones', sessions:'Sesiones' })[page] + ' · NexoDashboard';
+  document.title = ({ overview:'Resumen', apps:'Aplicaciones', performance:'Archivos', network:'Red y discos', visitors:'Visitantes', gateway:'Gateway', infrastructure:'Infraestructura', media:'Multimedia', processes:'Procesos', actions:'Acciones', sessions:'Sesiones' })[page] + ' · NexoDashboard';
 })();
