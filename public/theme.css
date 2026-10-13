@@ -116,7 +116,18 @@
 html { scroll-behavior: smooth; }
 body {
   font-family: var(--font);
-  background: var(--bg);
+  /* Trazo tenue: intervalos horizontales asimétricos y acentos verticales espaciados.
+   * --ink adapta el contraste a ambos temas; solo el fondo recibe el patrón. */
+  background-color: var(--bg);
+  background-image:
+    repeating-linear-gradient(0deg,
+      transparent 0 42px,
+      color-mix(in srgb, var(--ink) 4%, transparent) 42px 43px,
+      transparent 43px 109px,
+      color-mix(in srgb, var(--ink) 4%, transparent) 109px 110px),
+    repeating-linear-gradient(92deg,
+      transparent 0 232px,
+      color-mix(in srgb, var(--ink) 3%, transparent) 232px 233px);
   color: var(--ink);
   font-variant-numeric: tabular-nums;
   min-height: 100vh;
