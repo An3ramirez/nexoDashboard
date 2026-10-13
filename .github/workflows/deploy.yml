@@ -15,7 +15,7 @@ concurrency:
 jobs:
   deploy:
     # Este runner debe estar instalado en el servidor privado 192.168.1.61.
-    runs-on: [self-hosted, linux, x64, nexo-server]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 15
     steps:
       - name: Obtener código

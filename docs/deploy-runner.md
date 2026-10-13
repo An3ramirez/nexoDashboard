@@ -7,7 +7,8 @@ runners públicos de GitHub.
 
 En GitHub: `Settings → Actions → Runners → New self-hosted runner`, seleccionar
 Linux x64 y ejecutar los comandos de instalación en `server-local` con el
-usuario `andres`. Al registrar el runner, añadir la etiqueta `nexo-server`.
+usuario `andres`. El workflow usa las etiquetas estándar `self-hosted`,
+`linux` y `x64`.
 
 El servicio del runner debe quedar habilitado para iniciar con el servidor.
 El workflow conserva `auth.json`, `data/` y `node_modules/` del servidor; las
