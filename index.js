@@ -1130,6 +1130,17 @@ function parseUserAgent(ua) {
     return { device, browser };
 }
 
+// Devuelve el dominio principal (registrable-ish) de un host: quita el ultimo
+// segmento de subdominio. app.corposoft.net -> corposoft.net ; corposoft.net -> corposoft.net.
+// Es heuristico (no usa la Public Suffix List) pero suficiente para hosts propios.
+function baseDomainOf(host) {
+    const h = String(host || '').trim().toLowerCase().replace(/:\d+$/, '');
+    if (!h) return null;
+    const labels = h.split('.').filter(Boolean);
+    if (labels.length <= 2) return labels.join('.');
+    return labels.slice(-2).join('.');
+}
+
 function readAccessLogTail(maxBytes = 4 * 1024 * 1024) {
     try {
         const fd = fs.openSync(NGINX_ACCESS_LOG, 'r');
@@ -1174,15 +1185,13 @@ async function getVisitors() {
         const lines = text.split('\n');
         for (const line of lines) {
             if (!line.trim()) continue;
-            // Formato nuevo: remote|cfip|time|method|uri|status|ua
-            // Formato con vhost: host|remote|cfip|time|method|uri|status|ua
-            // (nginx registra $host como primer campo cuando hay varios vhosts).
+            // Formato nuevo: ip|cfip|host|time|method|uri|status|ua
+            // (acepta el formato viejo de 7 campos sin host para no romper logs previos)
             const parts = line.split('|');
-            let ip = null, ts = null, method = null, uri = null, status = null, ua = null, host = '';
+            let ip = null, ts = null, method = null, uri = null, status = null, ua = null, host = null;
             if (parts.length >= 8) {
-                // nginx (main_cf): remote_addr|cf_connecting_ip|host|time|method|uri|status|ua
                 ip = (parts[1] || '').trim();
-                host = (parts[2] || '').trim();
+                host = (parts[2] || '').trim() || null;
                 ts = parseNginxTime(parts[3]);
                 method = parts[4];
                 uri = parts[5];
@@ -1209,14 +1218,10 @@ async function getVisitors() {
             }
             if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') continue;
             if (!ts || now - ts > VISITOR_WINDOW_MS) continue;
-            // Clave por IP + dispositivo/navegador + dominio. El UA no es una
-            // identidad perfecta, pero evita fusionar dispositivos diferentes
-            // de la misma red sin almacenar cookies ni datos personales.
-            const { domain, subdomain } = splitDomain(host);
-            const key = ip + '|' + (host || domain) + '|' + String(ua || '').slice(0, 280);
-            const rec = byVisitor.get(key) || { ip, host, domain, subdomain, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua };
+            const rec = byIp.get(ip) || { ip, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua, hosts: new Set() };
             rec.requests++;
-            if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; rec.host = host || rec.host; const d2 = splitDomain(rec.host); rec.domain = d2.domain; rec.subdomain = d2.subdomain; }
+            if (host) rec.hosts.add(host);
+            if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; if (host) rec.lastHost = host; else rec.lastHost = rec.lastHost || null; }
             if (ts < rec.firstSeen) rec.firstSeen = ts;
             byVisitor.set(key, rec);
         }
@@ -1225,6 +1230,10 @@ async function getVisitors() {
         .map(r => {
             const { device, browser } = parseUserAgent(r.ua);
             const idleMs = now - r.lastSeen;
+            const hosts = Array.from(r.hosts || []).sort();
+            const lastHost = r.lastHost || hosts[hosts.length - 1] || null;
+            // Dominio principal = ultimo segmento con TLD (p.ej. app.corposoft.net -> corposoft.net)
+            const baseDomain = lastHost ? baseDomainOf(lastHost) : null;
             return {
                 ip: r.ip,
                 host: r.host || r.domain,
@@ -1236,6 +1245,11 @@ async function getVisitors() {
                 lastSeen: r.lastSeen,
                 lastUri: r.lastUri || '/',
                 lastStatus: r.lastStatus,
+                host: lastHost,
+                baseDomain,
+                hosts,
+                subdomain: lastHost && baseDomain && lastHost !== baseDomain
+                    ? lastHost.slice(0, -(baseDomain.length + 1)) : null,
                 active: idleMs < VISITOR_IDLE_MS,
                 idleSec: Math.round(idleMs / 1000),
             };
