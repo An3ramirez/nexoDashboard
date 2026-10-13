@@ -3,8 +3,60 @@
         // sesiones y del User-Agent/IP de los visitantes — el UA lo controla quien
         // visita, así que sin esto una petición con UA malicioso se ejecuta aquí.
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, history: { short: [], daily: [] }, range: 'short' };
+        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: 'short' };
         let lastArtKey = null;
+
+        function setValue(key, value) {
+            const el = q(key) || document.getElementById(key);
+            if (el) el.textContent = value == null || value === '' ? '--' : String(value);
+        }
+
+        function renderOverview(sys) {
+            setValue('heroHost', sys.hostname || 'Servidor');
+            setValue('heroOs', sys.osDistro || '--');
+            setValue('heroUptime', sys.uptime != null ? fmtUptime(sys.uptime) : '--');
+            setValue('cpuHero', sys.cpu != null ? `${sys.cpu}%` : '--');
+            setValue('ramHero', sys.memUsed != null ? `${sys.memUsed}%` : '--');
+            setValue('diskHero', sys.diskUsedPct != null ? `${sys.diskUsedPct}%` : '--');
+            setValue('tempHero', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
+            setValue('swapHero', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
+            applyStatus('cpuHero', sys.cpu, 85, 95);
+            applyStatus('ramHero', sys.memUsed, 85, 95);
+            applyStatus('diskHero', sys.diskUsedPct, 85, 95);
+            if (sys.swapUsedPct != null) applyStatus('swapHero', sys.swapUsedPct, 75, 90);
+
+            setValue('healthCpu', sys.cpu != null ? `${sys.cpu}%` : '--');
+            setValue('healthTemp', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
+            setValue('healthSwap', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
+
+            const checks = [
+                [sys.cpu, 85, 95, 'CPU'], [sys.memUsed, 85, 95, 'RAM'],
+                [sys.diskUsedPct, 85, 95, 'disco'], [sys.cpuTemp, 75, 85, 'temperatura'],
+                [sys.swapUsedPct, 75, 90, 'swap'],
+            ];
+            const critical = checks.filter(([value, , limit]) => value != null && value >= limit);
+            const warning = checks.filter(([value, warnAt, limit]) => value != null && value >= warnAt && value < limit);
+            const alerts = Array.isArray(state.alerts) ? state.alerts.length : 0;
+            const level = critical.length ? 'critical' : (warning.length || alerts ? 'warning' : 'good');
+            const levelEl = document.getElementById('healthLevel');
+            if (levelEl) {
+                levelEl.textContent = level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Estable';
+                levelEl.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+            }
+            const title = document.getElementById('healthTitle');
+            if (title) title.textContent = level === 'critical' ? 'Requiere atención inmediata' : level === 'warning' ? 'Servidor bajo observación' : 'Servidor funcionando bien';
+            const copy = document.getElementById('healthCopy');
+            if (copy) {
+                const causes = critical.length ? critical.map((item) => item[3]) : warning.map((item) => item[3]);
+                copy.textContent = causes.length ? `Revisa ${causes.join(', ')}.` : alerts ? `${alerts} alerta${alerts === 1 ? '' : 's'} activa${alerts === 1 ? '' : 's'}.` : 'Las métricas principales están dentro de los umbrales.';
+            }
+            setValue('healthAlerts', alerts);
+            const badge = document.getElementById('heroStatus');
+            if (badge) {
+                badge.textContent = `● ${level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Operativo'}`;
+                badge.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+            }
+        }
 
         function fmtTime(sec) {
             if (sec == null || isNaN(sec)) return '0:00';
@@ -89,6 +141,8 @@
             const oc = state.oc || {};
             const player = state.player || {};
             const bt = state.bluetooth || {};
+
+            renderOverview(sys);
 
             const btInfo = document.getElementById('bluetoothInfo');
             if (btInfo) {
@@ -308,6 +362,10 @@
             } else {
                 visContainer.innerHTML = '<div class="text-xs text-white/30 text-center py-4">Sin visitantes en los últimos 5 minutos</div>';
             }
+
+            window.__nexoState = state;
+            window.NexoInsights?.render(state);
+            window.NexoPanels?.render(state);
         }
 
         const socket = io();
@@ -326,6 +384,9 @@
             if (data.history) state.history = data.history;
             if (data.bluetooth) state.bluetooth = data.bluetooth;
             if (data.visitors) state.visitors = data.visitors;
+            ['io', 'alerts', 'services', 'docker', 'smart', 'checks', 'links', 'publicFiles'].forEach((key) => {
+                if (data[key] !== undefined) state[key] = data[key];
+            });
             render();
         });
 
