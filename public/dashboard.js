@@ -91,23 +91,26 @@
             const bt = state.bluetooth || {};
 
             const btInfo = document.getElementById('bluetoothInfo');
-            if (bt.connected) {
-                btInfo.classList.remove('hidden');
-                btInfo.classList.add('flex');
-                document.querySelector('[data-value="btName"]').textContent = bt.name || 'Dispositivo Bluetooth';
-                const battWrap = document.querySelector('[data-value="btBatteryWrap"]');
-                const battEl = document.querySelector('[data-value="btBatteryPct"]');
-                if (bt.battery != null) {
-                    battWrap.style.display = '';
-                    battEl.textContent = bt.battery + '%';
-                    battEl.classList.remove('status-good', 'status-warning', 'status-critical');
-                    battEl.classList.add(`status-${statusLevel(100 - bt.battery, 70, 85)}`);
+            if (btInfo) {
+                if (bt.connected) {
+                    btInfo.classList.remove('hidden');
+                    btInfo.classList.add('flex');
+                    const btName = document.querySelector('[data-value="btName"]');
+                    const battWrap = document.querySelector('[data-value="btBatteryWrap"]');
+                    const battEl = document.querySelector('[data-value="btBatteryPct"]');
+                    if (btName) btName.textContent = bt.name || 'Dispositivo Bluetooth';
+                    if (bt.battery != null && battWrap && battEl) {
+                        battWrap.style.display = '';
+                        battEl.textContent = bt.battery + '%';
+                        battEl.classList.remove('status-good', 'status-warning', 'status-critical');
+                        battEl.classList.add(`status-${statusLevel(100 - bt.battery, 70, 85)}`);
+                    } else if (battWrap) {
+                        battWrap.style.display = 'none';
+                    }
                 } else {
-                    battWrap.style.display = 'none';
+                    btInfo.classList.add('hidden');
+                    btInfo.classList.remove('flex');
                 }
-            } else {
-                btInfo.classList.add('hidden');
-                btInfo.classList.remove('flex');
             }
 
             if (player.ok) {
