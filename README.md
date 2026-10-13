@@ -47,6 +47,12 @@ En producción la carpeta es:
 Se configura mediante `PUBLIC_FILES_DIR`. Esta carpeta está fuera del checkout
 para conservar los archivos al actualizar el código.
 
+Los binarios se guardan como archivos en esa carpeta y sus metadatos (nombre,
+tamaño, expiración, estado persistente y origen de subida) se mantienen en
+`index.json`. El proyecto no usa una base de datos para el módulo de archivos.
+El servicio systemd y el workflow de despliegue deben compartir la misma ruta
+`PUBLIC_FILES_DIR`; el unit file versionado está en `deploy/nexodashboard.service`.
+
 ## Despliegue automático
 
 El workflow `.github/workflows/deploy.yml` se ejecuta en cada push a `main`,
