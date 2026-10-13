@@ -276,6 +276,12 @@ body::before {
 .hero-stats { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; }
 .hero-stat .k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
 .hero-stat .v { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+.overview-trends { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:18px; }
+.overview-trend { min-width:0; padding:10px 12px 7px; border:1px solid var(--border); border-radius:13px; background:var(--overlay); }
+.overview-trend-head { display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:10.5px; font-weight:700; }
+.overview-trend-head strong { color:var(--ink); font-size:13px; font-variant-numeric:tabular-nums; }
+svg.overview-chart { display:block; width:100%; height:54px; margin-top:5px; }
+@media (max-width: 520px) { .overview-trends { grid-template-columns:1fr; gap:8px; margin-top:14px; } svg.overview-chart { height:46px; } }
 .page-hidden { display: none !important; }
 .health-summary { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:16px 0 6px; padding:16px 18px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-card); }
 .health-main { display:flex; align-items:center; gap:12px; }.health-main h2 { margin:0; font-size:14px; font-weight:800; }.health-main p { margin:3px 0 0; font-size:12px; color:var(--muted); }

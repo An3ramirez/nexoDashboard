@@ -20,6 +20,10 @@
             setValue('diskHero', sys.diskUsedPct != null ? `${sys.diskUsedPct}%` : '--');
             setValue('tempHero', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
             setValue('swapHero', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
+            setValue('overviewCpuNow', sys.cpu != null ? `${sys.cpu}%` : '--');
+            setValue('overviewRamNow', sys.memUsed != null ? `${sys.memUsed}%` : '--');
+            setValue('overviewRange', state.range === 'daily' ? '24 h' : '1 h');
+            setValue('overviewRangeRam', state.range === 'daily' ? '24 h' : '1 h');
             applyStatus('cpuHero', sys.cpu, 85, 95);
             applyStatus('ramHero', sys.memUsed, 85, 95);
             applyStatus('diskHero', sys.diskUsedPct, 85, 95);
@@ -106,6 +110,74 @@
                 <polygon points="${area}" fill="${color}" opacity="0.14"></polygon>
                 <polyline points="${line}" fill="none" stroke="${color}" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+        }
+
+        function drawSeriesChart(svg, tracks, fixedMax = null) {
+            if (!svg) return;
+            const box = (svg.getAttribute('viewBox') || '0 0 300 90').split(/\s+/).map(Number);
+            const w = box[2] || 300, h = box[3] || 90;
+            const pad = { left: 4, right: 5, top: 5, bottom: 6 };
+            const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
+            const ns = 'http://www.w3.org/2000/svg';
+            const make = (name, attrs) => {
+                const node = document.createElementNS(ns, name);
+                Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+                return node;
+            };
+            svg.replaceChildren();
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.top + plotH * i / 4;
+                svg.appendChild(make('line', { x1: pad.left, y1: y, x2: w - pad.right, y2: y, class: 'chart-grid' }));
+            }
+            const all = tracks.flatMap((track) => track.values.map(Number).filter(Number.isFinite));
+            if (!all.length) {
+                const label = make('text', { x: w / 2, y: h / 2 + 4, 'text-anchor': 'middle', class: 'chart-axis' });
+                label.textContent = 'Esperando muestras';
+                svg.appendChild(label);
+                return;
+            }
+            const max = fixedMax || Math.max(1, Math.ceil(Math.max(...all) * 1.15));
+            tracks.forEach((track) => {
+                const values = track.values.map(Number).filter(Number.isFinite);
+                if (!values.length) return;
+                const plotted = values.length === 1 ? [values[0], values[0]] : values;
+                const points = plotted.map((value, index) => ({
+                    x: pad.left + plotW * index / Math.max(1, plotted.length - 1),
+                    y: pad.top + plotH - Math.max(0, Math.min(max, value)) / max * plotH,
+                }));
+                const line = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+                const area = `${line} L${points[points.length - 1].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} L${points[0].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
+                svg.appendChild(make('path', { d: area, fill: track.color, opacity: '0.1' }));
+                svg.appendChild(make('path', { d: line, fill: 'none', stroke: track.color, 'stroke-width': h < 80 ? 2.5 : 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+                const last = points[points.length - 1];
+                svg.appendChild(make('circle', { cx: last.x, cy: last.y, r: h < 80 ? 3 : 2.5, fill: track.color, stroke: 'var(--surface-solid)', 'stroke-width': 1.5 }));
+            });
+        }
+
+        function renderMetricCharts() {
+            const history = activeSeries();
+            const cpu = history.length ? history.map((sample) => sample.cpu) : state.cpuHistory;
+            const ram = history.length ? history.map((sample) => sample.ram) : state.memHistory;
+            const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+            const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
+            drawSeriesChart(document.querySelector('[data-chart="overview-cpu"]'), [{ values: cpu, color: cpuColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="overview-ram"]'), [{ values: ram, color: ramColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="history"]'), [
+                { values: history.map((sample) => sample.cpu), color: cpuColor },
+                { values: history.map((sample) => sample.ram), color: ramColor },
+            ], 100);
+            const net = state.io?.net?.hist || [];
+            drawSeriesChart(document.querySelector('[data-chart="net"]'), [
+                { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
+                { values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
+            ]);
+            const disk = state.io?.disk?.hist || [];
+            drawSeriesChart(document.querySelector('[data-chart="dio"]'), [
+                { values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
+                { values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
+            ]);
         }
 
         // Etiquetas de tiempo relativo bajo cada sparkline ("-12 min" … "ahora").
@@ -366,6 +438,7 @@
             window.__nexoState = state;
             window.NexoInsights?.render(state);
             window.NexoPanels?.render(state);
+            renderMetricCharts();
         }
 
         const socket = io();
