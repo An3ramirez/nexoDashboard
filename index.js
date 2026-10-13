@@ -95,7 +95,9 @@ function verifyPassword(password) {
 // nombres suministrados por el navegador para escapar del directorio.
 const PUBLIC_FILES_DIR = path.join(__dirname, 'data', 'public-files');
 const PUBLIC_FILES_META = path.join(PUBLIC_FILES_DIR, 'index.json');
-const PUBLIC_FILE_MAX_BYTES = 25 * 1024 * 1024;
+// Las cargas grandes se escriben en streaming (nunca se concentran en RAM).
+// El límite es 50 GiB binarios; la UI lo comunica como 50 GB.
+const PUBLIC_FILE_MAX_BYTES = 50 * 1024 * 1024 * 1024;
 const PUBLIC_FILE_TTL_MIN = 24 * 60;
 let publicFiles = [];
 let publicFileCleanupEnabled = true;
@@ -148,27 +150,56 @@ app.get('/api/public-files', (req, res) => {
   cleanPublicFiles();
   res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, maxBytes: PUBLIC_FILE_MAX_BYTES, files: publicFiles.map(({ id, name, size, createdAt, expiresAt, persistent }) => ({ id, name, size, createdAt, expiresAt, persistent })) });
 });
-app.post('/api/public-files', express.raw({ type: 'application/octet-stream', limit: PUBLIC_FILE_MAX_BYTES }), (req, res) => {
+app.post('/api/public-files', (req, res) => {
   cleanPublicFiles();
-  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ ok: false, error: 'Selecciona un archivo no vacío.' });
-  if (req.body.length > PUBLIC_FILE_MAX_BYTES) return res.status(413).json({ ok: false, error: 'El archivo supera el límite de 25 MB.' });
+  const declaredSize = Number(req.get('content-length'));
+  if (Number.isFinite(declaredSize) && declaredSize > PUBLIC_FILE_MAX_BYTES) {
+    req.resume();
+    return res.status(413).json({ ok: false, error: 'El archivo supera el límite de 50 GB.' });
+  }
   const ttlMinutes = publicFileDefaultTtlMinutes;
   const id = crypto.randomBytes(18).toString('hex');
-  const item = {
-    id, name: safeUploadName(req.get('X-File-Name')), size: req.body.length, createdAt: Date.now(),
-    expiresAt: Date.now() + ttlMinutes * 60 * 1000,
-    persistent: false, persistenceKeyId: null,
-    uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) },
+  const tempPath = path.join(PUBLIC_FILES_DIR, `${id}.upload`);
+  const finalPath = path.join(PUBLIC_FILES_DIR, `${id}.bin`);
+  let received = 0;
+  let done = false;
+  const finishWithError = (status, error) => {
+    if (done) return;
+    done = true;
+    try { fs.unlinkSync(tempPath); } catch {}
+    if (!res.headersSent) res.status(status).json({ ok: false, error });
   };
   try {
     fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(PUBLIC_FILES_DIR, `${id}.bin`), req.body, { mode: 0o600, flag: 'wx' });
-    publicFiles.push(item); savePublicFiles();
-    res.status(201).json({ ok: true, file: item, downloadUrl: `/files/${id}` });
-  } catch {
-    try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${id}.bin`)); } catch {}
-    res.status(500).json({ ok: false, error: 'No se pudo guardar el archivo.' });
-  }
+  } catch { return res.status(500).json({ ok: false, error: 'No se pudo preparar el almacenamiento.' }); }
+  const output = fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 });
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > PUBLIC_FILE_MAX_BYTES && !done) {
+      req.unpipe(output); output.destroy(); req.resume();
+      finishWithError(413, 'El archivo supera el límite de 50 GB.');
+    }
+  });
+  req.once('aborted', () => finishWithError(400, 'La subida fue cancelada.'));
+  req.once('error', () => finishWithError(400, 'La subida falló.'));
+  output.once('error', () => finishWithError(500, 'No se pudo guardar el archivo.'));
+  output.once('finish', () => {
+    if (done) return;
+    if (!received) return finishWithError(400, 'Selecciona un archivo no vacío.');
+    const item = {
+      id, name: safeUploadName(req.get('X-File-Name')), size: received, createdAt: Date.now(),
+      expiresAt: Date.now() + ttlMinutes * 60 * 1000,
+      persistent: false, persistenceKeyId: null,
+      uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) },
+    };
+    try {
+      fs.renameSync(tempPath, finalPath);
+      publicFiles.push(item); savePublicFiles();
+      done = true;
+      res.status(201).json({ ok: true, file: item, downloadUrl: `/files/${id}` });
+    } catch { finishWithError(500, 'No se pudo finalizar el archivo.'); }
+  });
+  req.pipe(output);
 });
 app.get('/files/:id', (req, res, next) => {
   if (req.params.id === 'js') return next();

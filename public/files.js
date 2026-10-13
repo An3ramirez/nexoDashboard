@@ -1,7 +1,10 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-let fileState = { cleanupEnabled: true, maxBytes: 25 * 1024 * 1024, files: [] };
-function fmtBytes(n) { return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`; }
+let fileState = { cleanupEnabled: true, maxBytes: 50 * 1024 * 1024 * 1024, files: [] };
+function fmtBytes(n) {
+  if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`;
+  return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
+}
 function until(ts) { const m = Math.max(0, Math.ceil((ts - Date.now()) / 60000)); return m < 60 ? `${m} min` : `${Math.ceil(m / 60)} h`; }
 function expiry(ts) { return ts ? `Expira en ${until(ts)} · ${new Date(ts).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' })}` : 'Sin caducidad'; }
 function esc(s) { return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
