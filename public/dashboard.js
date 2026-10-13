@@ -321,6 +321,7 @@ function render() {
   if (sys.memUsed != null) { q('ramHero').textContent = sys.memUsed + '%'; applyStatus('ramHero', sys.memUsed, 80, 92); }
   if (sys.diskUsedPct != null) { q('diskHero').textContent = sys.diskUsedPct + '%'; applyStatus('diskHero', sys.diskUsedPct, 85, 95); }
   if (sys.cpuTemp != null) q('tempHero').textContent = sys.cpuTemp + '°C';
+  if (sys.swapUsedPct != null) { q('swapHero').textContent = sys.swapUsedPct.toFixed(1) + '%'; applyStatus('swapHero', sys.swapUsedPct, 40, 75); }
   const heroStatus = document.getElementById('heroStatus');
   heroStatus.textContent = socket.connected ? '● En línea' : '● Sin conexión';
   heroStatus.className = 'pill ' + (socket.connected ? 'online' : 'offline');
@@ -328,6 +329,26 @@ function render() {
   badge.textContent = socket.connected ? '● Online' : '● Offline';
   badge.className = 'pill ' + (socket.connected ? 'online' : 'offline');
   badge.style.cssText = 'width:100%;justify-content:center';
+
+  // Salud operacional: el estado no puede quedarse verde solo porque el socket
+  // sigue conectado. Prioriza las alertas críticas y muestra el siguiente paso.
+  const alerts = state.alerts || [];
+  const critical = alerts.filter((a) => a.level === 'crit');
+  const warning = alerts.filter((a) => a.level === 'warn');
+  const healthLevel = document.getElementById('healthLevel');
+  const healthTitle = document.getElementById('healthTitle');
+  const healthCopy = document.getElementById('healthCopy');
+  if (healthLevel && healthTitle && healthCopy) {
+    const level = critical.length ? 'critical' : warning.length ? 'warning' : 'good';
+    healthLevel.className = 'pill ' + (level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online');
+    healthLevel.textContent = level === 'critical' ? '● Atención inmediata' : level === 'warning' ? '● Requiere revisión' : '● Salud normal';
+    healthTitle.textContent = level === 'critical' ? 'Hay métricas críticas activas' : level === 'warning' ? 'Hay métricas cerca del umbral' : 'El servidor opera dentro de sus umbrales';
+    healthCopy.textContent = level === 'critical' ? `${critical.map((a) => a.msg).join(' · ')}. Revisa Rendimiento antes de ejecutar una acción.` : level === 'warning' ? warning.map((a) => a.msg).join(' · ') : 'CPU, memoria, disco, temperatura y gateway no reportan alertas.';
+    q('healthCpu').textContent = sys.cpu != null ? `${sys.cpu}%` : '--';
+    q('healthTemp').textContent = sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--';
+    q('healthSwap').textContent = sys.swapUsedPct != null ? `${sys.swapUsedPct.toFixed(1)}% (${sys.swapUsedMB || 0}/${sys.swapTotalMB || 0} MB)` : 'N/A';
+    q('healthAlerts').textContent = String(alerts.length);
+  }
 
   // Bluetooth
   const btPill = document.getElementById('btPill');
@@ -413,7 +434,7 @@ function render() {
   }
   if (sys.osDistro) q('osDistro').textContent = sys.osDistro;
   if (sys.swapUsedPct != null) {
-    q('swapLabel').textContent = sys.swapUsedPct.toFixed(1) + '%';
+    q('swapLabel').textContent = `${sys.swapUsedPct.toFixed(1)}% · ${sys.swapUsedMB || 0}/${sys.swapTotalMB || 0} MB`;
     applyStatus('swap', sys.swapUsedPct, 40, 75);
   } else {
     q('swapLabel').textContent = 'N/A';
@@ -496,7 +517,8 @@ function render() {
     q('topProc').textContent = `${top.name} (${top.cpu}%)`;
   }
 
-  renderVisitors();
+  if (window.NexoVisitors) window.NexoVisitors.render(state);
+  if (window.NexoInsights) window.NexoInsights.render(state);
   renderAlerts();
   if (window.NexoPanels) window.NexoPanels.render(state);
 }
@@ -844,14 +866,15 @@ const modal = document.getElementById('confirmModal');
 const modalTitle = document.getElementById('modalTitle');
 const modalWarning = document.getElementById('modalWarning');
 const modalHoursRow = document.getElementById('modalHoursRow');
+const modalPasswordRow = document.getElementById('modalPasswordRow');
 const modalHours = document.getElementById('modalHours');
 const modalPassword = document.getElementById('modalPassword');
-const modalConfirmWord = document.getElementById('modalConfirmWord');
 const modalConfirmInput = document.getElementById('modalConfirmInput');
 const modalConfirmBtn = document.getElementById('modalConfirm');
 const modalCancelBtn = document.getElementById('modalCancel');
 let pendingAction = null;
 let pendingKillPid = null;
+let modalRequiresPassword = false;
 function openModal(action) {
   pendingAction = action;
   pendingKillPid = null;
@@ -860,17 +883,29 @@ function openModal(action) {
   modalConfirmBtn.disabled = true;
   modalConfirmBtn.style.background = 'rgba(255,107,107,0.45)';
   modalConfirmBtn.style.cursor = 'not-allowed';
+  modalRequiresPassword = false;
+  modalPasswordRow.classList.add('hidden');
+  modalHoursRow.classList.add('hidden');
   if (action === 'reboot') {
     modalTitle.textContent = 'Reiniciar el servidor';
     modalWarning.textContent = 'El servidor se reiniciará y estará fuera de línea unos minutos. El dashboard y el gateway volverán solos al terminar.';
     modalHoursRow.classList.add('hidden');
-    modalConfirmWord.textContent = 'REINICIAR';
+    modalRequiresPassword = true; modalPasswordRow.classList.remove('hidden');
   } else if (action === 'shutdown') {
     modalTitle.textContent = 'Apagar el servidor';
     modalWarning.textContent = 'El servidor se apagará por completo y se programará su encendido automático (RTC) a la hora elegida.';
     modalHoursRow.classList.remove('hidden');
-    modalConfirmWord.textContent = 'APAGAR';
+    modalRequiresPassword = true; modalPasswordRow.classList.remove('hidden');
+  } else {
+    const info = {
+      'restart-openclaw': ['Reiniciar OpenClaw', 'Se reiniciará el gateway. Las conversaciones en curso se interrumpirán brevemente.', 'REINICIAR'],
+      'free-ram': ['Liberar RAM', 'Se vaciará la caché de página del sistema. Puede aumentar temporalmente el acceso al disco.', 'LIBERAR'],
+      'free-swap': ['Liberar swap', 'La swap se desactivará y activará de nuevo. Algunas aplicaciones pueden ralentizarse brevemente.', 'SWAP'],
+      'doctor-fix': ['Ejecutar Doctor Fix', 'OpenClaw intentará corregir su configuración. Puede tardar unos segundos.', 'CORREGIR'],
+    }[action];
+    if (info) { modalTitle.textContent = info[0]; modalWarning.textContent = info[1]; }
   }
+  checkModalValid();
   modal.classList.remove('hidden');
   modal.classList.add('flex');
   modalPassword.focus();
@@ -884,10 +919,12 @@ function openKillModal(pid, name) {
   modalConfirmBtn.disabled = true;
   modalConfirmBtn.style.background = 'rgba(255,107,107,0.45)';
   modalConfirmBtn.style.cursor = 'not-allowed';
+  modalRequiresPassword = false;
+  modalPasswordRow.classList.add('hidden');
   modalTitle.textContent = `Terminar proceso ${pid}`;
   modalWarning.textContent = `Se enviará SIGTERM a "${name}" (PID ${pid}). El proceso puede no terminar si lo ignora.`;
   modalHoursRow.classList.add('hidden');
-  modalConfirmWord.textContent = 'TERMINAR';
+  checkModalValid();
   modal.classList.remove('hidden');
   modal.classList.add('flex');
   modalConfirmInput.focus();
@@ -900,8 +937,7 @@ function closeModal() {
   pendingKillPid = null;
 }
 function checkModalValid() {
-  const word = pendingAction === 'reboot' ? 'REINICIAR' : pendingAction === 'shutdown' ? 'APAGAR' : pendingAction === 'kill' ? 'TERMINAR' : '';
-  const valid = modalConfirmInput.value === word && (pendingAction === 'kill' || modalPassword.value.length > 0);
+  const valid = !modalRequiresPassword || modalPassword.value.length > 0;
   modalConfirmBtn.disabled = !valid;
   modalConfirmBtn.style.background = valid ? 'var(--status-critical)' : 'rgba(255,107,107,0.45)';
   modalConfirmBtn.style.cursor = valid ? 'pointer' : 'not-allowed';
@@ -917,21 +953,17 @@ modalConfirmBtn.addEventListener('click', async () => {
     await window.NexoPanels.kill(pid);
     return;
   }
-  const body = { password: modalPassword.value };
+  const body = modalRequiresPassword ? { password: modalPassword.value } : {};
   if (action === 'shutdown') body.hours = Number(modalHours.value);
   closeModal();
+  if (action === 'doctor-fix') showResult('Ejecutando doctor --fix… puede tardar unos segundos', false);
   await callAction(action, body);
 });
 document.querySelectorAll('[data-action]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const action = btn.dataset.action;
-    if (action === 'reboot' || action === 'shutdown') {
+    if (action === 'reboot' || action === 'shutdown' || action === 'restart-openclaw' || action === 'free-ram' || action === 'free-swap' || action === 'doctor-fix') {
       openModal(action);
-    } else if (action === 'restart-openclaw') {
-      if (confirm('¿Reiniciar el gateway de OpenClaw ahora? Se interrumpirán conversaciones en curso brevemente.')) callAction(action);
-    } else if (action === 'free-ram' || action === 'free-swap' || action === 'doctor-fix') {
-      if (action === 'doctor-fix') showResult('Ejecutando doctor --fix… puede tardar unos segundos', false);
-      callAction(action);
     }
   });
 });

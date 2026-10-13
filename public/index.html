@@ -77,20 +77,20 @@
         </div>
 
         <div class="nav-group-label">Monitoreo</div>
-        <button class="nav-item active" data-nav="sec-overview"><svg width="17" height="17"><use href="#i-grid"/></svg>Resumen</button>
-        <button class="nav-item" data-nav="sec-perf"><svg width="17" height="17"><use href="#i-gauge"/></svg>Rendimiento</button>
-        <button class="nav-item" data-nav="sec-net"><svg width="17" height="17"><use href="#i-net"/></svg>Red y discos</button>
-        <button class="nav-item" data-nav="sec-visitors"><svg width="17" height="17"><use href="#i-users"/></svg>Visitantes<span class="nav-count" id="navVisitorsCount">0</span></button>
+        <button class="nav-item active" data-nav="sec-overview" data-page="overview"><svg width="17" height="17"><use href="#i-grid"/></svg>Resumen</button>
+        <button class="nav-item" data-nav="sec-files" data-page="performance"><svg width="17" height="17"><use href="#i-file"/></svg>Archivos</button>
+        <button class="nav-item" data-nav="sec-net" data-page="network"><svg width="17" height="17"><use href="#i-net"/></svg>Red y discos</button>
+        <button class="nav-item" data-nav="sec-visitors" data-page="visitors"><svg width="17" height="17"><use href="#i-users"/></svg>Visitantes<span class="nav-count" id="navVisitorsCount">0</span></button>
 
         <div class="nav-group-label">Servicios</div>
-        <button class="nav-item" data-nav="sec-gateway"><svg width="17" height="17"><use href="#i-server"/></svg>Gateway<span class="nav-count" id="navGwCount" style="display:none">!</span></button>
-        <button class="nav-item" data-nav="sec-infra"><svg width="17" height="17"><use href="#i-box"/></svg>Infraestructura</button>
-        <button class="nav-item" data-nav="sec-media"><svg width="17" height="17"><use href="#i-music"/></svg>Multimedia</button>
+        <button class="nav-item" data-nav="sec-gateway" data-page="gateway"><svg width="17" height="17"><use href="#i-server"/></svg>Gateway<span class="nav-count" id="navGwCount" style="display:none">!</span></button>
+        <button class="nav-item" data-nav="sec-infra" data-page="infrastructure"><svg width="17" height="17"><use href="#i-box"/></svg>Infraestructura</button>
+        <button class="nav-item" data-nav="sec-media" data-page="media"><svg width="17" height="17"><use href="#i-music"/></svg>Multimedia</button>
 
         <div class="nav-group-label">Operación</div>
-        <button class="nav-item" data-nav="sec-procs"><svg width="17" height="17"><use href="#i-terminal"/></svg>Procesos</button>
-        <button class="nav-item" data-nav="sec-actions"><svg width="17" height="17"><use href="#i-zap"/></svg>Acciones</button>
-        <button class="nav-item" data-nav="sec-sessions"><svg width="17" height="17"><use href="#i-clock"/></svg>Sesiones</button>
+        <button class="nav-item" data-nav="sec-procs" data-page="processes"><svg width="17" height="17"><use href="#i-terminal"/></svg>Procesos</button>
+        <button class="nav-item" data-nav="sec-actions" data-page="actions"><svg width="17" height="17"><use href="#i-zap"/></svg>Acciones</button>
+        <button class="nav-item" data-nav="sec-sessions" data-page="sessions"><svg width="17" height="17"><use href="#i-clock"/></svg>Sesiones</button>
 
         <div class="sidebar-foot">
             <div class="pill" id="serverBadge" style="width:100%;justify-content:center">● --</div>
@@ -147,6 +147,7 @@
                         <div class="hero-stat"><div class="k">RAM</div><div class="v" data-color="ramHero" data-value="ramHero">--</div></div>
                         <div class="hero-stat"><div class="k">Disco</div><div class="v" data-color="diskHero" data-value="diskHero">--</div></div>
                         <div class="hero-stat"><div class="k">Temp</div><div class="v" data-value="tempHero">--</div></div>
+                        <div class="hero-stat"><div class="k">Swap</div><div class="v" data-color="swapHero" data-value="swapHero">--</div></div>
                     </div>
                 </div>
                 <div class="flex flex-col items-end gap-2">
@@ -159,10 +160,15 @@
             </div>
         </section>
 
+        <section class="health-summary reveal" id="health-summary" aria-label="Salud operativa">
+            <div class="health-main"><span id="healthLevel" class="pill">Analizando salud…</span><div><h2 id="healthTitle">Estado del servidor</h2><p id="healthCopy">Esperando la primera muestra de telemetría.</p></div></div>
+            <div class="health-facts"><span>CPU <b data-value="healthCpu">--</b></span><span>Temperatura <b data-value="healthTemp">--</b></span><span>Swap <b data-value="healthSwap">--</b></span><span>Alertas <b data-value="healthAlerts">--</b></span></div>
+        </section>
+
         <!-- ══════════ Acciones rápidas ══════════ -->
-        <div class="sec-head reveal">
+        <div class="sec-head reveal" id="sec-quick">
             <h2>Acciones rápidas</h2>
-            <p>Un toque, sin confirmar</p>
+            <p>Operaciones frecuentes con confirmación</p>
         </div>
         <div class="card reveal" data-tags="acciones rapidas atajos reproductor abrir panel liberar ram swap doctor fix openclaw">
             <div class="qa-grid">
@@ -242,6 +248,24 @@
                     <span class="legend-chip"><span class="legend-dot" data-legend="ram"></span>RAM %</span>
                     <span class="legend-chip faint" id="histMeta" style="margin-left:auto"></span>
                 </div>
+            </section>
+        </div>
+
+        <!-- ══════════ Administración de archivos ══════════ -->
+        <div class="sec-head reveal" id="sec-files">
+            <h2>Archivos públicos</h2>
+            <p>Subidas · persistencia · trazabilidad</p>
+        </div>
+        <div class="bento">
+            <section class="card reveal span-6" aria-label="Estado de almacenamiento público">
+                <div class="card-head"><div class="icon-chip tint-disk"><svg width="16" height="16"><use href="#i-disk"/></svg></div><span class="card-title big">Estado de almacenamiento</span><span id="fileCleanupPill" class="pill">--</span></div>
+                <div class="grid grid-cols-2 gap-3"><div class="rounded-2xl p-3.5" style="background:var(--overlay);border:1px solid var(--border)"><div class="label mb-1.5">Archivos</div><div id="fileAdminCount" class="text-2xl font-extrabold">--</div></div><div class="rounded-2xl p-3.5" style="background:var(--overlay);border:1px solid var(--border)"><div class="label mb-1.5">Espacio usado</div><div id="fileAdminSize" class="text-2xl font-extrabold">--</div></div></div>
+                <form id="fileTtlForm" class="flex gap-2 mt-4"><select id="fileDefaultTtl" class="field" aria-label="Duración predeterminada de archivos"><option value="5">5 minutos</option><option value="60">1 hora</option><option value="360">6 horas</option><option value="1440">24 horas</option></select><button class="btn-ghost rounded-xl px-4" type="submit" style="font-size:12px;font-weight:700">Guardar</button></form>
+                <p class="muted mt-4" style="font-size:12px;line-height:1.55">La página pública está disponible en <a class="link-accent" href="/files" target="_blank" rel="noopener">/files</a>. Los archivos sin clave usan la duración predeterminada definida aquí.</p>
+            </section>
+            <section class="card reveal span-6" aria-label="Inventario de archivos públicos">
+                <div class="card-head"><div class="icon-chip tint-net"><svg width="16" height="16"><use href="#i-users"/></svg></div><span class="card-title big">Inventario y origen de subidas</span><button id="fileAdminRefresh" class="btn-ghost icon-btn" type="button" title="Actualizar archivos" aria-label="Actualizar archivos"><svg width="15" height="15"><use href="#i-refresh"/></svg></button></div>
+                <div id="fileAdminList" class="empty-state">Cargando archivos…</div>
             </section>
         </div>
 
@@ -513,6 +537,10 @@
                     <button class="btn-ghost icon-btn" type="submit" title="Añadir enlace" aria-label="Añadir enlace"><svg width="15" height="15"><use href="#i-plus"/></svg></button>
                 </form>
             </section>
+            <section class="card reveal span-6" data-tags="auditoria historial acciones bitacora" aria-label="Bitácora de operaciones">
+                <div class="card-head"><div class="icon-chip tint-accent"><svg width="16" height="16"><use href="#i-hist"/></svg></div><span class="card-title big">Bitácora de operaciones</span><button id="auditRefresh" class="btn-ghost icon-btn" type="button" title="Actualizar bitácora" aria-label="Actualizar bitácora"><svg width="15" height="15"><use href="#i-refresh"/></svg></button></div>
+                <div id="auditList" class="empty-state">Cargando operaciones recientes…</div>
+            </section>
         </div>
 
         <!-- ══════════ Sesiones + sistema ══════════ -->
@@ -563,11 +591,11 @@
 
 <!-- ══════════ Bottom nav (móvil) ══════════ -->
 <nav class="bottomnav" aria-label="Navegación inferior">
-    <button data-nav="sec-overview" class="active"><svg width="19" height="19"><use href="#i-grid"/></svg>Resumen</button>
-    <button data-nav="sec-perf"><svg width="19" height="19"><use href="#i-gauge"/></svg>Rendim.</button>
-    <button data-nav="sec-visitors"><svg width="19" height="19"><use href="#i-users"/></svg>Visitas</button>
-    <button data-nav="sec-procs"><svg width="19" height="19"><use href="#i-terminal"/></svg>Procesos</button>
-    <button data-nav="sec-actions"><svg width="19" height="19"><use href="#i-zap"/></svg>Acciones</button>
+    <button data-nav="sec-overview" data-page="overview" class="active"><svg width="19" height="19"><use href="#i-grid"/></svg>Resumen</button>
+    <button data-nav="sec-files" data-page="performance"><svg width="19" height="19"><use href="#i-file"/></svg>Archivos</button>
+    <button data-nav="sec-gateway" data-page="gateway"><svg width="19" height="19"><use href="#i-server"/></svg>Gateway</button>
+    <button data-nav="sec-actions" data-page="actions"><svg width="19" height="19"><use href="#i-zap"/></svg>Operar</button>
+    <button data-nav="sec-visitors" data-page="visitors"><svg width="19" height="19"><use href="#i-users"/></svg>Visitas</button>
 </nav>
 
 <div id="toasts" aria-live="polite"></div>
@@ -589,10 +617,11 @@
                 <option value="24">24 horas</option>
             </select>
         </div>
-        <label class="label block mb-1.5" for="modalPassword">Clave</label>
-        <input type="password" id="modalPassword" class="field mb-3" autocomplete="current-password">
-        <label class="label block mb-1.5" for="modalConfirmInput">Escribe <span id="modalConfirmWord"></span> para confirmar</label>
-        <input type="text" id="modalConfirmInput" class="field mb-5" autocomplete="off">
+        <div id="modalPasswordRow">
+            <label class="label block mb-1.5" for="modalPassword">Clave</label>
+            <input type="password" id="modalPassword" class="field mb-3" autocomplete="current-password">
+        </div>
+        <div id="modalTextConfirmRow" class="hidden"><label class="label block mb-1.5" for="modalConfirmInput">Confirmación</label><input type="text" id="modalConfirmInput" class="field mb-5" autocomplete="off"></div>
         <div class="flex gap-2">
             <button id="modalCancel" class="flex-1 btn-ghost rounded-xl p-2.5" style="font-size:12px;font-weight:600">Cancelar</button>
             <button id="modalConfirm" disabled class="flex-1 rounded-xl p-2.5 text-white" style="font-size:12px;font-weight:700;background:rgba(255,107,107,0.45);cursor:not-allowed;border:none">Confirmar</button>
@@ -639,6 +668,11 @@
 </div>
 
 <script src="/dashboard.js" defer></script>
+<script src="/insights.js" defer></script>
 <script src="/panels.js" defer></script>
+<script src="/page.js" defer></script>
+<script src="/visitors.js" defer></script>
+<script src="/audit.js" defer></script>
+<script src="/file-admin.js" defer></script>
 </body>
 </html>

@@ -275,6 +275,19 @@ body::before {
 .hero-stats { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; }
 .hero-stat .k { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
 .hero-stat .v { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+.page-hidden { display: none !important; }
+.health-summary { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:16px 0 6px; padding:16px 18px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); box-shadow:var(--shadow-card); }
+.health-main { display:flex; align-items:center; gap:12px; }.health-main h2 { margin:0; font-size:14px; font-weight:800; }.health-main p { margin:3px 0 0; font-size:12px; color:var(--muted); }
+.health-facts { display:flex; flex-wrap:wrap; gap:12px; color:var(--faint); font-size:11px; }.health-facts b { display:block; color:var(--ink); font-size:13px; margin-top:2px; }
+.page-insights { margin:0 0 14px; padding:15px 16px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); }.page-insights h3 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0 0 12px; }.insights-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:9px; }.insight { min-width:0; padding:10px 11px; border:1px solid var(--border); border-radius:11px; background:var(--overlay); }.insight span,.insight small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.insight span { color:var(--faint); font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }.insight strong { display:block; color:var(--ink); font-size:15px; margin:3px 0; }.insight small { color:var(--muted); font-size:10.5px; }.insight.warning strong { color:var(--status-warning); }.insight.critical strong { color:var(--status-critical); }
+@media (max-width: 640px) { .health-summary { align-items:flex-start; flex-direction:column; }.health-facts { width:100%; justify-content:space-between; gap:8px; }.health-main { align-items:flex-start; } }
+@media (max-width: 640px) {
+  .hero { padding: 20px; }
+  .hero > div { display: block !important; }
+  .hero > div > .flex-1 { min-width: 0 !important; }
+  .hero-stats { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px 18px; }
+  .hero > div > .flex.flex-col { align-items:flex-start; flex-direction:row; margin-top:17px; }
+}
 
 /* ── Bento grid ── */
 .bento { display: grid; grid-template-columns: 1fr; gap: 14px; }
@@ -622,3 +635,26 @@ select.field option { background: var(--surface-solid); color: var(--ink); }
 .link-accent:hover { filter: brightness(1.1); }
 .online { color: var(--status-good); }
 .offline { color: var(--status-critical); }
+
+/* ── Intercambio público de archivos ── */
+.public-files-shell { width: min(100% - 32px, 960px); margin: 0 auto; padding: 22px 0 64px; }
+.public-files-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:32px; }
+.public-files-head .brand-row { padding:0; text-decoration:none; color:var(--ink); }
+.public-files-head .brand-badge { font-size:22px; }
+.public-files-head .brand-sub { display:block; }
+.public-files-hero { border:1px solid var(--border-glow); background:linear-gradient(135deg, var(--accent-soft), transparent 65%),var(--surface-solid); border-radius:24px; padding:28px; margin-bottom:16px; box-shadow:var(--shadow-card); }
+.public-files-hero h1 { font-size:clamp(25px,4vw,38px); letter-spacing:-.035em; margin:14px 0 8px; }
+.public-files-hero p { margin:0; max-width:620px; color:var(--muted); line-height:1.6; }
+.public-files-grid { display:grid; grid-template-columns:1fr; gap:16px; }
+@media (min-width: 760px) { .public-files-grid { grid-template-columns:1fr 1fr; } }
+.upload-drop { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:164px; padding:20px; text-align:center; gap:7px; border:1px dashed var(--border-strong); border-radius:14px; cursor:pointer; background:var(--overlay); color:var(--muted); transition:border-color .15s, background .15s; }
+.upload-drop:hover, .upload-drop:focus-within { border-color:var(--accent); background:var(--accent-soft); }
+.upload-drop strong { color:var(--ink); }.upload-drop input { max-width:100%; margin-top:8px; }
+.upload-btn { width:100%; border-radius:12px; padding:11px 14px; margin-top:16px; font:700 13px var(--font); cursor:pointer; }
+.files-list { display:grid; gap:8px; max-height:350px; overflow:auto; }
+.file-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px; background:var(--overlay); border:1px solid var(--border); border-radius:12px; }
+.file-row strong,.file-row span { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }.file-row strong { font-size:13px; }.file-row span { color:var(--faint); font-size:11px; margin-top:4px; }
+.share-link { display:flex; align-items:center; gap:5px; margin-top:8px; max-width:100%; }.share-link input { min-width:0; flex:1; color:var(--faint); background:var(--surface-solid); border:1px solid var(--border); border-radius:7px; padding:5px 7px; font:11px ui-monospace,monospace; }.share-link input:focus { color:var(--ink); border-color:var(--accent); outline:none; }
+.key-once { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:11px; border:1px solid var(--status-warning); border-radius:12px; background:var(--warn-soft); font-size:12px; }.key-once code { max-width:100%; overflow:auto; padding:5px 7px; border-radius:7px; background:var(--surface-solid); color:var(--ink); }
+.cleanup-card { display:flex; gap:18px; justify-content:space-between; align-items:center; margin-top:16px; }.cleanup-card p { font-size:12px; line-height:1.5; margin:6px 0 0; max-width:620px; }
+@media (max-width: 520px) { .public-files-shell { width:min(100% - 24px,960px); }.public-files-hero { padding:22px; }.cleanup-card { align-items:flex-start; flex-direction:column; }.file-row { align-items:flex-start; flex-direction:column; }.file-row a { width:100%; } }

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Intercambio temporal de archivos">
+  <title>Archivos temporales · NexoDashboard</title>
+  <link rel="stylesheet" href="/fonts.css">
+  <link rel="stylesheet" href="/tailwind.css">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body class="antialiased">
+  <main class="public-files-shell">
+    <header class="public-files-head">
+      <a class="brand-row" href="/" aria-label="Ir al dashboard">
+        <span class="brand-badge" aria-hidden="true">↟</span>
+        <span><span class="brand-name">NexoDashboard</span><span class="brand-sub">Intercambio temporal</span></span>
+      </a>
+      <button id="fileTheme" class="btn-ghost icon-btn" type="button" aria-label="Cambiar tema">Tema</button>
+    </header>
+    <section class="public-files-hero">
+      <span class="pill online">Disponible públicamente</span>
+      <h1>Envía archivos sin crear una cuenta</h1>
+      <p>Los archivos se eliminan de forma automática al caducar. Cada descarga usa un enlace no adivinable.</p>
+    </section>
+    <div class="public-files-grid">
+      <section class="card">
+        <div class="card-head"><span class="card-title big">Subir archivo</span><span id="maxSize" class="pill">Máx. 25 MB</span></div>
+        <form id="uploadForm">
+          <label class="upload-drop" for="uploadInput"><strong id="fileName">Elige un archivo</strong><span>o arrástralo aquí</span><input id="uploadInput" type="file" required></label>
+          <button class="btn-primary upload-btn" type="submit">Subir y crear enlace</button>
+          <p id="uploadResult" class="muted mt-3" role="status">La duración la define el administrador.</p>
+        </form>
+      </section>
+      <section class="card">
+        <div class="card-head"><span class="card-title big">Archivos disponibles</span><span id="cleanupState" class="pill">Cargando…</span></div>
+        <div id="publicFilesList" class="files-list"><div class="empty-state">Cargando archivos…</div></div>
+      </section>
+    </div>
+    <section class="card cleanup-card">
+      <div><div class="card-title big">Protección de caducidad</div><p class="muted">El borrado automático está activo por defecto. Para detenerlo debes confirmar con la clave del dashboard.</p></div>
+      <button id="cleanupToggle" class="btn-ghost icon-btn" type="button">Gestionar borrado</button>
+    </section>
+  </main>
+  <div id="cleanupModal" class="fixed inset-0 modal-backdrop hidden items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="cleanupTitle">
+    <div class="modal-card rounded-2xl p-6 w-full max-w-sm">
+      <h2 id="cleanupTitle" class="font-bold" style="font-size:16px">Gestionar borrado automático</h2>
+      <p id="cleanupCopy" class="muted mt-2" style="font-size:13px">--</p>
+      <label class="label block mt-5 mb-1.5" for="cleanupPassword">Clave del dashboard</label>
+      <input id="cleanupPassword" class="field" type="password" autocomplete="current-password">
+      <p id="cleanupResult" class="mt-2" role="status"></p>
+      <div class="flex gap-2 mt-5"><button id="cleanupCancel" class="btn-ghost rounded-xl px-4 py-2.5 flex-1" type="button">Cancelar</button><button id="cleanupConfirm" class="btn-primary rounded-xl px-4 py-2.5 flex-1" type="button">Confirmar</button></div>
+    </div>
+  </div>
+  <script src="/files.js" defer></script>
+</body>
+</html>
