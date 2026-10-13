@@ -102,7 +102,7 @@
 
     <!-- ══════════ Columna principal ══════════ -->
     <div class="main-col">
-        <header class="topbar">
+        <header class="topbar" id="topbar" aria-label="Barra de administración">
             <div class="topbar-inner">
                 <div class="brand-row lg:hidden" style="padding:0">
                     <div class="brand-badge" style="width:34px;height:34px" aria-hidden="true">
@@ -130,9 +130,9 @@
                         <svg width="16" height="16"><use href="#i-key"/></svg>
                         <span class="hidden md:inline">Clave</span>
                     </button>
-                    <button id="logoutBtn" class="btn-ghost icon-btn" title="Cerrar sesión">
+                    <button id="logoutBtn" class="btn-ghost icon-btn" title="Cerrar sesión" aria-label="Cerrar sesión">
                         <svg width="16" height="16"><use href="#i-logout"/></svg>
-                        <span class="hidden md:inline">Salir</span>
+                        <span>Salir</span>
                     </button>
                 </div>
             </div>
@@ -721,7 +721,7 @@
 <script src="/dashboard.js?v=20261013-chart-axes-1" defer></script>
 <script src="/insights.js?v=20261013-3" defer></script>
 <script src="/panels.js" defer></script>
-<script src="/page.js?v=20261013-apps-1" defer></script>
+<script src="/page.js?v=20261013-admin-header-1" defer></script>
 <script src="/applications.js?v=20261013-apps-1" defer></script>
 <script src="/visitors.js" defer></script>
 <script src="/audit.js" defer></script>

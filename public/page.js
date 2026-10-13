@@ -27,7 +27,7 @@
   });
   Array.from(main.children).forEach((node) => {
     const id = node.id;
-    const isVisible = visible.has(id) || visible.has(`for:${node.dataset.pageFor}`) || node.tagName === 'FOOTER';
+    const isVisible = node.matches('.topbar') || visible.has(id) || visible.has(`for:${node.dataset.pageFor}`) || node.tagName === 'FOOTER';
     node.classList.toggle('page-hidden', !isVisible);
   });
   // El resumen debe responder primero a “¿cómo está el servidor?”. Por eso las
