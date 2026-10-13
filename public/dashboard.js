@@ -3,7 +3,7 @@
         // sesiones y del User-Agent/IP de los visitantes — el UA lo controla quien
         // visita, así que sin esto una petición con UA malicioso se ejecuta aquí.
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: 'short' };
+        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], swapHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: 'short' };
         let lastArtKey = null;
 
         function setValue(key, value) {
@@ -20,10 +20,34 @@
             setValue('diskHero', sys.diskUsedPct != null ? `${sys.diskUsedPct}%` : '--');
             setValue('tempHero', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
             setValue('swapHero', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
-            setValue('overviewCpuNow', sys.cpu != null ? `${sys.cpu}%` : '--');
-            setValue('overviewRamNow', sys.memUsed != null ? `${sys.memUsed}%` : '--');
-            setValue('overviewRange', state.range === 'daily' ? '24 h' : '1 h');
-            setValue('overviewRangeRam', state.range === 'daily' ? '24 h' : '1 h');
+            const fmtMem = (mb) => mb == null || !Number.isFinite(Number(mb)) ? '--' : Number(mb) >= 1024 ? `${(Number(mb) / 1024).toFixed(1)} GB` : `${Math.round(Number(mb))} MB`;
+            const swapConfigured = Number(sys.swapTotalMB) > 0 && sys.swapUsedPct != null;
+            setValue('swapHeroDetail', swapConfigured ? `${fmtMem(sys.swapUsedMB)} / ${fmtMem(sys.swapTotalMB)} usados` : 'No configurada');
+            if (swapConfigured) {
+                const pct = Math.max(0, Math.min(100, Number(sys.swapUsedPct)));
+                const freeMB = Math.max(0, Number(sys.swapTotalMB) - Number(sys.swapUsedMB || 0));
+                const level = statusLevel(pct, 75, 90);
+                setValue('swapPerfValue', `${Math.round(pct)}%`);
+                setValue('swapPerfDetail', `${fmtMem(sys.swapUsedMB)} usados`);
+                setValue('swapFreeLabel', `Libre: ${fmtMem(freeMB)}`);
+                setValue('swapTotalLabel', `Total: ${fmtMem(sys.swapTotalMB)}`);
+                setValue('swapPerfStatus', level === 'critical' ? 'Crítica' : level === 'warning' ? 'Alta' : 'Normal');
+                const status = q('swapPerfStatus');
+                if (status) status.className = `card-tools pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+                const bar = document.getElementById('swapBar');
+                if (bar) { bar.style.width = `${pct}%`; bar.style.background = STATUS_VAR[level]; }
+                applyStatus('swapPerf', pct, 75, 90);
+            } else {
+                setValue('swapPerfValue', 'No configurada');
+                setValue('swapPerfDetail', 'El sistema no tiene memoria Swap disponible');
+                setValue('swapFreeLabel', 'Libre: --');
+                setValue('swapTotalLabel', 'Total: --');
+                setValue('swapPerfStatus', 'No disponible');
+                const status = q('swapPerfStatus');
+                if (status) status.className = 'card-tools pill';
+                const bar = document.getElementById('swapBar');
+                if (bar) bar.style.width = '0%';
+            }
             applyStatus('cpuHero', sys.cpu, 85, 95);
             applyStatus('ramHero', sys.memUsed, 85, 95);
             applyStatus('diskHero', sys.diskUsedPct, 85, 95);
@@ -160,10 +184,9 @@
             const ram = history.length ? history.map((sample) => sample.ram) : state.memHistory;
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
-            drawSeriesChart(document.querySelector('[data-chart="overview-cpu"]'), [{ values: cpu, color: cpuColor }], 100);
-            drawSeriesChart(document.querySelector('[data-chart="overview-ram"]'), [{ values: ram, color: ramColor }], 100);
             drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
             drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: (state.swapHistory || []).map((sample) => sample.pct), color: color('--status-warning') }], 100);
             drawSeriesChart(document.querySelector('[data-chart="history"]'), [
                 { values: history.map((sample) => sample.cpu), color: cpuColor },
                 { values: history.map((sample) => sample.ram), color: ramColor },
@@ -445,7 +468,14 @@
         socket.on('connect', render);
         socket.on('disconnect', render);
         socket.on('stats', (data) => {
-            if (data.sys) state.sys = data.sys;
+            if (data.sys) {
+                state.sys = data.sys;
+                const pct = Number(data.sys.swapUsedPct);
+                if (Number.isFinite(pct) && Number(data.sys.swapTotalMB) > 0) {
+                    state.swapHistory.push({ t: Date.now(), pct });
+                    if (state.swapHistory.length > 180) state.swapHistory.splice(0, state.swapHistory.length - 180);
+                } else state.swapHistory = [];
+            }
             if (data.oc) state.oc = data.oc;
             if (data.models) state.models = data.models;
             if (data.ping !== undefined) state.ping = data.ping;

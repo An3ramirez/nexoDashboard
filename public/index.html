@@ -7,7 +7,7 @@
     <title>NexoDashboard</title>
     <link rel="stylesheet" href="/fonts.css">
     <link rel="stylesheet" href="/tailwind.css">
-    <link rel="stylesheet" href="/theme.css?v=20261013-4">
+    <link rel="stylesheet" href="/theme.css?v=20261013-5">
     <script src="/socket.io/socket.io.js" defer></script>
     <link rel="icon" type="image/png" sizes="1254x1254" href="/app-icon.png">
     <link rel="apple-touch-icon" href="/app-icon.png">
@@ -148,11 +148,7 @@
                         <div class="hero-stat"><div class="k">RAM</div><div class="v" data-color="ramHero" data-value="ramHero">--</div></div>
                         <div class="hero-stat"><div class="k">Disco</div><div class="v" data-color="diskHero" data-value="diskHero">--</div></div>
                         <div class="hero-stat"><div class="k">Temp</div><div class="v" data-value="tempHero">--</div></div>
-                        <div class="hero-stat"><div class="k">Swap</div><div class="v" data-color="swapHero" data-value="swapHero">--</div></div>
-                    </div>
-                    <div class="overview-trends" aria-label="Gráficas actuales de CPU y RAM">
-                        <div class="overview-trend"><div class="overview-trend-head"><span>CPU · <span data-value="overviewRange">1 h</span></span><strong data-value="overviewCpuNow">--</strong></div><svg class="overview-chart" data-chart="overview-cpu" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Tendencia de CPU"></svg></div>
-                        <div class="overview-trend"><div class="overview-trend-head"><span>RAM · <span data-value="overviewRangeRam">1 h</span></span><strong data-value="overviewRamNow">--</strong></div><svg class="overview-chart" data-chart="overview-ram" viewBox="0 0 300 64" preserveAspectRatio="none" role="img" aria-label="Tendencia de RAM"></svg></div>
+                        <div class="hero-stat"><div class="k">Swap</div><div class="v" data-color="swapHero" data-value="swapHero">--</div><div class="hero-stat-detail" data-value="swapHeroDetail">--</div></div>
                     </div>
                 </div>
                 <div class="flex flex-col items-end gap-2">
@@ -232,7 +228,22 @@
                 <div id="smartMini" class="muted mt-3" style="font-size:11.5px">Comprobando salud SMART…</div>
             </section>
 
-            <section class="card reveal span-6" data-tags="historico historial history grafica 24h 7 dias export csv" aria-label="Histórico de rendimiento">
+            <section class="card reveal span-3" data-tags="swap intercambio memoria virtual uso capacidad tendencia" aria-label="Uso de Swap">
+                <div class="card-head">
+                    <div class="icon-chip tint-warn"><svg width="16" height="16"><use href="#i-ram"/></svg></div>
+                    <span class="card-title big">Swap</span>
+                    <span class="card-tools pill" data-value="swapPerfStatus">--</span>
+                </div>
+                <div class="flex items-baseline justify-between gap-3 flex-wrap">
+                    <div class="stat-value" data-color="swapPerf"><span data-value="swapPerfValue">--</span></div>
+                    <span class="muted" style="font-size:12px" data-value="swapPerfDetail">--</span>
+                </div>
+                <div class="usage-track mt-3"><div id="swapBar" style="width:0%;background:var(--status-warning)"></div></div>
+                <div class="flex justify-between mt-2" style="font-size:11px"><span class="faint" data-value="swapFreeLabel">Libre: --</span><span class="faint" data-value="swapTotalLabel">Total: --</span></div>
+                <div class="chart-wrap mt-3"><svg data-chart="swap" viewBox="0 0 300 90" preserveAspectRatio="none" class="chart" style="height:84px" role="img" aria-label="Tendencia de uso de Swap"></svg></div>
+            </section>
+
+            <section class="card reveal span-3" data-tags="historico historial history grafica 24h 7 dias export csv" aria-label="Histórico de rendimiento">
                 <div class="card-head">
                     <div class="icon-chip tint-accent"><svg width="16" height="16"><use href="#i-hist"/></svg></div>
                     <span class="card-title big">Histórico CPU + RAM</span>
@@ -672,7 +683,7 @@
     </div>
 </div>
 
-<script src="/dashboard.js?v=20261013-4" defer></script>
+<script src="/dashboard.js?v=20261013-5" defer></script>
 <script src="/insights.js?v=20261013-3" defer></script>
 <script src="/panels.js" defer></script>
 <script src="/page.js?v=20261013-2" defer></script>
