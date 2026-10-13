@@ -305,6 +305,10 @@ function readSamples() {
   }).filter((s) => s && typeof s.t === 'number');
 }
 
+function getSamples() {
+  return readSamples();
+}
+
 function compactSamplesIfNeeded() {
   try {
     const lines = fs.readFileSync(SAMPLES_PATH, 'utf8').split('\n').filter(Boolean);
@@ -718,4 +722,4 @@ function registerRoutes(app) {
   });
 }
 
-module.exports = { registerRoutes, boot, pollFast, pollSlow, snapshot };
+module.exports = { registerRoutes, boot, pollFast, pollSlow, snapshot, getSamples };

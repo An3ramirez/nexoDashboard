@@ -95,7 +95,7 @@
 
         <div class="sidebar-foot">
             <div class="pill" id="serverBadge" style="width:100%;justify-content:center">● --</div>
-            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v2</div>
+            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v3</div>
         </div>
     </aside>
 
@@ -243,6 +243,7 @@
                 <div class="usage-track mt-3"><div id="swapBar" style="width:0%;background:var(--status-warning)"></div></div>
                 <div class="flex justify-between mt-2" style="font-size:11px"><span class="faint" data-value="swapFreeLabel">Libre: --</span><span class="faint" data-value="swapTotalLabel">Total: --</span></div>
                 <div class="chart-wrap mt-3"><svg data-chart="swap" viewBox="0 0 300 90" preserveAspectRatio="none" class="chart" style="height:84px" role="img" aria-label="Tendencia de uso de Swap"></svg></div>
+                <div class="mt-2 faint" style="font-size:11px" data-sparkrange="swap"></div>
             </section>
 
             <section class="card reveal span-3" data-tags="historico historial history grafica 24h 7 dias export csv" aria-label="Histórico de rendimiento">
@@ -261,6 +262,7 @@
                     <svg data-chart="history" viewBox="0 0 600 200" preserveAspectRatio="none" class="chart" style="height:210px" role="img" aria-label="Histórico de CPU y RAM"></svg>
                     <div class="chart-tip" data-tip="history"></div>
                 </div>
+                <div class="mt-2 faint" style="font-size:11px" data-sparkrange="history"></div>
                 <div class="chart-legend" aria-hidden="true">
                     <span class="legend-chip"><span class="legend-dot" data-legend="cpu"></span>CPU %</span>
                     <span class="legend-chip"><span class="legend-dot" data-legend="ram"></span>RAM %</span>
@@ -314,6 +316,7 @@
                     <svg data-chart="net" viewBox="0 0 300 100" preserveAspectRatio="none" class="chart" style="height:110px" role="img" aria-label="Tráfico de red"></svg>
                     <div class="chart-tip" data-tip="net"></div>
                 </div>
+                <div class="mt-2 faint" style="font-size:11px" data-sparkrange="net"></div>
                 <div class="chart-legend">
                     <span class="legend-chip"><span class="legend-dot" data-legend="rx"></span>Bajada KB/s</span>
                     <span class="legend-chip"><span class="legend-dot" data-legend="tx"></span>Subida KB/s</span>
@@ -335,6 +338,7 @@
                     <svg data-chart="dio" viewBox="0 0 300 100" preserveAspectRatio="none" class="chart" style="height:110px" role="img" aria-label="I/O de disco"></svg>
                     <div class="chart-tip" data-tip="dio"></div>
                 </div>
+                <div class="mt-2 faint" style="font-size:11px" data-sparkrange="dio"></div>
                 <div class="chart-legend">
                     <span class="legend-chip"><span class="legend-dot" data-legend="dr"></span>Lectura KB/s</span>
                     <span class="legend-chip"><span class="legend-dot" data-legend="dw"></span>Escritura KB/s</span>
@@ -609,7 +613,7 @@
         </div>
 
         <footer class="text-center faint mt-10 pb-2" style="font-size:11px">
-            NexoDashboard v2 · monitoreo local del servidor
+            NexoDashboard v3 · monitoreo local del servidor
         </footer>
     </div>
 </div>

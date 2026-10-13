@@ -1135,14 +1135,16 @@ function getGatewayLogs(timeoutMs = 5000) {
 
 // ===== Sistema =====
 const HISTORY_LEN = 30;
-// Historial largo para las gráficas: muestras de 2 s durante 1 h y de 60 s
-// durante 24 h. Antes solo había 30 puntos (≈1 min) y el sparkline no contaba
-// nada. Los buffers viven en memoria; al reiniciar el servicio se vacían.
+// Historial en memoria complementado con muestras persistentes al arrancar.
 const SHORT_WINDOW_MS = 60 * 60 * 1000;
 const DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
-const shortHistory = [];   // { t, cpu, ram }
-const dailyHistory = [];   // { t, cpu, ram }
-let lastDailySampleMs = 0;
+const startupSamples = extras.getSamples().filter(sample =>
+    Number.isFinite(sample.t) && Number.isFinite(Number(sample.cpu)) && Number.isFinite(Number(sample.ram))
+).map(sample => ({ t: sample.t, cpu: Number(sample.cpu), ram: Number(sample.ram) })).sort((a, b) => a.t - b.t);
+const startupNow = Date.now();
+const shortHistory = startupSamples.filter(sample => startupNow - sample.t <= SHORT_WINDOW_MS);
+const dailyHistory = startupSamples.filter(sample => startupNow - sample.t <= DAILY_WINDOW_MS);
+let lastDailySampleMs = dailyHistory.length ? dailyHistory[dailyHistory.length - 1].t : 0;
 let sysCache = null;
 let pingCache = null;
 let processesCache = [];
