@@ -1283,14 +1283,17 @@ async function getVisitors() {
             }
             if (!ip || ip === '127.0.0.1' || ip === '::1' || ip === 'localhost') continue;
             if (!ts || now - ts > VISITOR_WINDOW_MS) continue;
-            const rec = byIp.get(ip) || { ip, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua, hosts: new Set() };
+            const key = ip + '|' + (host || '') + '|' + (ua || '');
+            const rec = byVisitor.get(key) || { ip, firstSeen: ts, lastSeen: ts, requests: 0, lastUri: uri, lastStatus: status, ua, lastHost: host, hosts: new Set() };
             rec.requests++;
             if (host) rec.hosts.add(host);
             if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; if (host) rec.lastHost = host; else rec.lastHost = rec.lastHost || null; }
             if (ts < rec.firstSeen) rec.firstSeen = ts;
             byVisitor.set(key, rec);
         }
-    } catch {}
+    } catch (e) {
+        console.error('[visitors]', e);
+    }
     const active = Array.from(byVisitor.values())
         .map(r => {
             const { device, browser } = parseUserAgent(r.ua);
@@ -1301,9 +1304,7 @@ async function getVisitors() {
             const baseDomain = lastHost ? baseDomainOf(lastHost) : null;
             return {
                 ip: r.ip,
-                host: r.host || r.domain,
-                domain: r.domain,
-                subdomain: r.subdomain || '',
+                domain: baseDomain,
                 device,
                 browser,
                 requests: r.requests,
