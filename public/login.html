@@ -7,12 +7,13 @@
 <title>NexoDashboard — Acceso</title>
 <link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/tailwind.css">
-<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/theme.css?v=20261013-nexo-music-1">
 <link rel="icon" type="image/png" sizes="1254x1254" href="/app-icon.png">
 <link rel="apple-touch-icon" href="/app-icon.png">
 </head>
 <body class="antialiased">
   <div class="login-wrap">
+    <main class="login-layout">
     <form class="card login-card" id="loginForm" novalidate>
       <div class="flex items-center gap-3 mb-1">
         <div class="brand-badge" aria-hidden="true">
@@ -37,6 +38,21 @@
       <div class="login-err" id="err" role="status" aria-live="polite"></div>
       <p class="faint text-center mt-4" style="font-size:11px;line-height:1.6">La clave se guarda cifrada en el servidor (PBKDF2). Solo quien la conoce puede entrar.</p>
     </form>
+    <section class="card login-resources" aria-labelledby="publicResourcesTitle">
+      <div class="login-resources-heading">
+        <span class="login-public-symbol" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/></svg></span>
+        <span class="pill">Acceso público</span>
+      </div>
+      <h1 id="publicResourcesTitle">Recursos públicos</h1>
+      <p class="login-resources-intro">Disfruta de estos recursos sin iniciar sesión en NexoDashboard.</p>
+      <a class="login-public-link" href="https://corposoft.net/player/" target="_blank" rel="noopener noreferrer" aria-label="Escuchar gratis en Nexo Music, abre en una nueva pestaña">
+        <span class="login-music-art"><img src="/nexo-music-cover.png" alt="" width="1774" height="887"><span class="login-music-free">Gratis</span></span>
+        <span class="login-public-copy"><strong>Nexo Music</strong><span class="login-music-tagline">Tu música, tus playlists, a tu ritmo.</span><span>Escucha canciones, explora álbumes y disfruta tus playlists desde el navegador.</span><span class="login-public-cta"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m8 4 13 8-13 8Z"/></svg>Escuchar gratis <span aria-hidden="true">↗</span></span></span>
+      </a>
+      <div class="login-coming-soon"><span class="login-soon-dot" aria-hidden="true"></span><div><strong>Próximamente, más recursos</strong><p>Este espacio crecerá con nuevas aplicaciones y servicios públicos.</p></div></div>
+      <p class="login-resources-note">El reproductor se abre en una nueva pestaña. La administración del servidor sigue protegida.</p>
+    </section>
+    </main>
   </div>
   <script src="/login.js" defer></script>
 </body>
