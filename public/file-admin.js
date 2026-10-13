@@ -53,7 +53,7 @@
   });
   $('fileKeyForm').addEventListener('submit', async (event) => {
     event.preventDefault();
-    const button = event.submitter; button.disabled = true;
+    const button = event.submitter || $('fileKeyForm').querySelector('[type="submit"]'); if (button) button.disabled = true;
     try {
       const r = await fetch('/api/public-files/keys', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ label:$('fileKeyLabel').value }) });
       const data = await r.json();
@@ -63,7 +63,7 @@
       $('fileKeyLabel').value = '';
       await load();
     } catch (error) { $('fileKeyResult').textContent = error.message; }
-    finally { button.disabled = false; }
+    finally { if (button) button.disabled = false; }
   });
   document.addEventListener('click', async (event) => {
     const persist = event.target.closest('[data-set-persistent]');
