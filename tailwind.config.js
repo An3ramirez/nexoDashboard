@@ -4,7 +4,7 @@
  *  'unsafe-eval'.
  */
 module.exports = {
-  content: ['./public/index.html', './public/login.html', './public/dashboard.js', './public/login.js'],
+  content: ['./public/index.html', './public/login.html', './public/dashboard.js', './public/panels.js', './public/login.js'],
   theme: { extend: {} },
   plugins: [],
 };

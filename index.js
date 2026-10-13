@@ -8,6 +8,10 @@ const si = require('systeminformation');
 const { spawn, execFile } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
+// Módulo de funcionalidades extendidas (I/O, docker, servicios, SMART,
+// historial persistente, alertas, procesos, logs, checks, quick links).
+// Solo AGREGA claves al payload 'stats' y rutas nuevas; no toca lo existente.
+const extras = require('./extras');
 
 const app = express();
 app.disable('x-powered-by');
@@ -84,6 +88,202 @@ function verifyPassword(password) {
   const expected = Buffer.from(authStore.hash, 'hex');
   return candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
 }
+
+// ===== Intercambio público de archivos =====
+// Los ficheros no viven bajo /public: se sirven únicamente mediante un id
+// aleatorio y se eliminan al caducar. Así no se pueden adivinar rutas ni usar
+// nombres suministrados por el navegador para escapar del directorio.
+// En producción se fija PUBLIC_FILES_DIR fuera del checkout para que las
+// cargas no se mezclen con el código ni se pierdan al actualizarlo. Localmente
+// se conserva una carpeta de desarrollo dentro del proyecto.
+const PUBLIC_FILES_DIR = path.resolve(process.env.PUBLIC_FILES_DIR || path.join(__dirname, 'data', 'public-files'));
+const PUBLIC_FILES_META = path.join(PUBLIC_FILES_DIR, 'index.json');
+// Las cargas grandes se escriben en streaming (nunca se concentran en RAM).
+// El límite es 50 GiB binarios; la UI lo comunica como 50 GB.
+const PUBLIC_FILE_MAX_BYTES = 50 * 1024 * 1024 * 1024;
+const PUBLIC_FILE_CHUNK_MAX_BYTES = 40 * 1024 * 1024;
+const PUBLIC_FILE_TTL_MIN = 24 * 60;
+let publicFiles = [];
+const activePublicUploads = new Map();
+let publicFileCleanupEnabled = true;
+let publicPersistenceKeys = [];
+let publicFileDefaultTtlMinutes = 60;
+
+function loadPublicFiles() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PUBLIC_FILES_META, 'utf8'));
+    publicFiles = Array.isArray(raw.files) ? raw.files : [];
+    publicFileCleanupEnabled = raw.cleanupEnabled !== false;
+    publicPersistenceKeys = Array.isArray(raw.persistenceKeys) ? raw.persistenceKeys : [];
+    publicFileDefaultTtlMinutes = Math.min(PUBLIC_FILE_TTL_MIN, Math.max(5, Number(raw.defaultTtlMinutes) || 60));
+  } catch { publicFiles = []; }
+}
+function savePublicFiles() {
+  fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 });
+  const tmp = `${PUBLIC_FILES_META}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, persistenceKeys: publicPersistenceKeys, files: publicFiles }, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, PUBLIC_FILES_META);
+}
+function cleanPublicFiles() {
+  if (!publicFileCleanupEnabled) return;
+  const now = Date.now();
+  const expired = publicFiles.filter((f) => f.expiresAt && f.expiresAt <= now);
+  for (const file of expired) {
+    try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); } catch {}
+  }
+  if (expired.length) {
+    publicFiles = publicFiles.filter((f) => !f.expiresAt || f.expiresAt > now);
+    try { savePublicFiles(); } catch {}
+  }
+}
+function safeUploadName(value) {
+  const name = path.basename(String(value || 'archivo')).replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 120);
+  return name || 'archivo';
+}
+function hashPersistenceKey(value) { return crypto.createHash('sha256').update(String(value || '')).digest('hex'); }
+function getUploadOrigin(req) {
+  const forwarded = String(req.get('cf-connecting-ip') || req.get('x-forwarded-for') || req.ip || '').split(',')[0].trim();
+  return forwarded.slice(0, 80) || 'desconocido';
+}
+loadPublicFiles();
+cleanPublicFiles();
+setInterval(cleanPublicFiles, 60 * 1000).unref();
+
+app.get('/files', (req, res) => res.sendFile('files.html', { root: path.join(__dirname, 'public') }));
+app.get('/files.js', (req, res) => res.sendFile('files.js', { root: path.join(__dirname, 'public') }));
+app.get('/api/public-files', (req, res) => {
+  cleanPublicFiles();
+  res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, maxBytes: PUBLIC_FILE_MAX_BYTES, files: publicFiles.map(({ id, name, size, createdAt, expiresAt, persistent }) => ({ id, name, size, createdAt, expiresAt, persistent })) });
+});
+app.post('/api/public-files', (req, res) => {
+  cleanPublicFiles();
+  const declaredSize = Number(req.get('content-length'));
+  if (Number.isFinite(declaredSize) && declaredSize > PUBLIC_FILE_MAX_BYTES) {
+    req.resume();
+    return res.status(413).json({ ok: false, error: 'El archivo supera el límite de 50 GB.' });
+  }
+  const ttlMinutes = publicFileDefaultTtlMinutes;
+  const id = crypto.randomBytes(18).toString('hex');
+  const tempPath = path.join(PUBLIC_FILES_DIR, `${id}.upload`);
+  const finalPath = path.join(PUBLIC_FILES_DIR, `${id}.bin`);
+  let received = 0;
+  let done = false;
+  const finishWithError = (status, error) => {
+    if (done) return;
+    done = true;
+    try { fs.unlinkSync(tempPath); } catch {}
+    if (!res.headersSent) res.status(status).json({ ok: false, error });
+  };
+  try {
+    fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 });
+  } catch { return res.status(500).json({ ok: false, error: 'No se pudo preparar el almacenamiento.' }); }
+  const output = fs.createWriteStream(tempPath, { flags: 'wx', mode: 0o600 });
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > PUBLIC_FILE_MAX_BYTES && !done) {
+      req.unpipe(output); output.destroy(); req.resume();
+      finishWithError(413, 'El archivo supera el límite de 50 GB.');
+    }
+  });
+  req.once('aborted', () => finishWithError(400, 'La subida fue cancelada.'));
+  req.once('error', () => finishWithError(400, 'La subida falló.'));
+  output.once('error', () => finishWithError(500, 'No se pudo guardar el archivo.'));
+  output.once('finish', () => {
+    if (done) return;
+    if (!received) return finishWithError(400, 'Selecciona un archivo no vacío.');
+    const item = {
+      id, name: safeUploadName(req.get('X-File-Name')), size: received, createdAt: Date.now(),
+      expiresAt: Date.now() + ttlMinutes * 60 * 1000,
+      persistent: false, persistenceKeyId: null,
+      uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) },
+    };
+    try {
+      fs.renameSync(tempPath, finalPath);
+      publicFiles.push(item); savePublicFiles();
+      done = true;
+      res.status(201).json({ ok: true, file: item, downloadUrl: `/files/${id}` });
+    } catch { finishWithError(500, 'No se pudo finalizar el archivo.'); }
+  });
+  req.pipe(output);
+});
+// Las redes intermedias suelen limitar una petición individual (aunque el
+// servidor admita 50 GB). Esta ruta recibe fragmentos pequeños y los concatena
+// directamente en el archivo temporal del disco.
+app.post('/api/public-files/chunk', (req, res) => {
+  cleanPublicFiles();
+  const uploadId = String(req.get('X-Upload-Id') || '');
+  const index = Number(req.get('X-Chunk-Index'));
+  const totalChunks = Number(req.get('X-Chunk-Total'));
+  const declaredSize = Number(req.get('X-File-Size'));
+  if (!/^[a-f0-9]{24,64}$/.test(uploadId) || !Number.isInteger(index) || !Number.isInteger(totalChunks) || index < 0 || index >= totalChunks || !Number.isFinite(declaredSize) || declaredSize <= 0 || declaredSize > PUBLIC_FILE_MAX_BYTES) {
+    req.resume();
+    return res.status(400).json({ ok: false, error: 'Datos de fragmento inválidos.' });
+  }
+  const existing = activePublicUploads.get(uploadId);
+  if (index === 0 && existing) return res.status(409).json({ ok: false, error: 'La carga ya está en curso.' });
+  if (index > 0 && (!existing || existing.nextIndex !== index || existing.totalChunks !== totalChunks || existing.totalSize !== declaredSize)) {
+    req.resume();
+    return res.status(409).json({ ok: false, error: 'Fragmento fuera de orden; reinicia la carga.' });
+  }
+  const state = existing || (() => {
+    const id = crypto.randomBytes(18).toString('hex');
+    const created = { id, nextIndex: 0, totalChunks, totalSize: declaredSize, received: 0, tempPath: path.join(PUBLIC_FILES_DIR, `${id}.upload`), finalPath: path.join(PUBLIC_FILES_DIR, `${id}.bin`), name: safeUploadName(req.get('X-File-Name')), expiresAt: Date.now() + publicFileDefaultTtlMinutes * 60 * 1000, uploader: { ip: getUploadOrigin(req), userAgent: String(req.get('user-agent') || 'desconocido').slice(0, 220) } };
+    try { fs.mkdirSync(PUBLIC_FILES_DIR, { recursive: true, mode: 0o700 }); } catch { return null; }
+    activePublicUploads.set(uploadId, created);
+    return created;
+  })();
+  if (!state) { req.resume(); return res.status(500).json({ ok: false, error: 'No se pudo preparar el almacenamiento.' }); }
+  let chunkBytes = 0;
+  let finished = false;
+  const output = fs.createWriteStream(state.tempPath, { flags: index === 0 ? 'wx' : 'a', mode: 0o600 });
+  const fail = (status, error) => {
+    if (finished) return;
+    finished = true;
+    activePublicUploads.delete(uploadId);
+    try { fs.unlinkSync(state.tempPath); } catch {}
+    if (!res.headersSent) res.status(status).json({ ok: false, error });
+  };
+  req.on('data', (part) => {
+    chunkBytes += part.length;
+    if (chunkBytes > PUBLIC_FILE_CHUNK_MAX_BYTES && !finished) {
+      req.unpipe(output); output.destroy(); req.resume(); fail(413, 'El fragmento supera el límite permitido.');
+    }
+  });
+  req.once('aborted', () => fail(400, 'La subida fue cancelada.'));
+  req.once('error', () => fail(400, 'La subida falló.'));
+  output.once('error', () => fail(500, 'No se pudo guardar el fragmento.'));
+  output.once('finish', () => {
+    if (finished) return;
+    state.received += chunkBytes;
+    state.nextIndex += 1;
+    if (state.nextIndex < state.totalChunks) {
+      finished = true;
+      return res.json({ ok: true, done: false, received: state.received });
+    }
+    if (state.received !== state.totalSize) return fail(400, 'El tamaño recibido no coincide con el archivo.');
+    const item = { id: state.id, name: state.name, size: state.received, createdAt: Date.now(), expiresAt: state.expiresAt, persistent: false, persistenceKeyId: null, uploader: state.uploader };
+    try {
+      fs.renameSync(state.tempPath, state.finalPath);
+      publicFiles.push(item); savePublicFiles(); activePublicUploads.delete(uploadId); finished = true;
+      res.status(201).json({ ok: true, done: true, file: item, downloadUrl: `/files/${state.id}` });
+    } catch { fail(500, 'No se pudo finalizar el archivo.'); }
+  });
+  req.pipe(output);
+});
+app.get('/files/:id', (req, res, next) => {
+  if (req.params.id === 'js') return next();
+  cleanPublicFiles();
+  const item = publicFiles.find((f) => f.id === req.params.id);
+  if (!item) return res.status(404).send('Archivo no encontrado o caducado.');
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.download(path.join(PUBLIC_FILES_DIR, `${item.id}.bin`), item.name);
+});
+app.post('/api/public-files/cleanup', express.json(), (req, res) => {
+  if (!verifyPassword(req.body?.password)) return res.status(403).json({ ok: false, error: 'Clave incorrecta.' });
+  publicFileCleanupEnabled = req.body?.enabled !== false;
+  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo guardar el ajuste.' }); }
+  res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled });
+});
 const ocTokens = new Map();
 const OC_PANEL_TARGET = 'http://127.0.0.1:18789';
 const OC_CONFIG_PATH = '/home/andres/.openclaw/openclaw.json';
@@ -125,8 +325,15 @@ app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(
 // Sin estas rutas quedaban detrás de requireDashAuth y el navegador recibía un
 // 302 al propio /login: ni los estilos ni el JS cargaban.
 app.get('/tailwind.css', (req, res) => res.sendFile('tailwind.css', { root: path.join(__dirname, 'public') }));
+app.get('/fonts.css', (req, res) => res.sendFile('fonts.css', { root: path.join(__dirname, 'public') }));
 app.get('/dashboard.js', (req, res) => res.sendFile('dashboard.js', { root: path.join(__dirname, 'public') }));
+app.get('/panels.js', (req, res) => res.sendFile('panels.js', { root: path.join(__dirname, 'public') }));
 app.get('/login.js', (req, res) => res.sendFile('login.js', { root: path.join(__dirname, 'public') }));
+// Fuentes Inter self-hosted (subset latino .woff2): las pide el CSS antes de la sesión.
+app.get('/fonts/:file', (req, res) => {
+  if (!/^inter-[458]00\.woff2$/.test(req.params.file)) return res.status(404).end();
+  res.sendFile(req.params.file, { root: path.join(__dirname, 'public', 'fonts') });
+});
 app.get('/favicon.svg', (req, res) => res.sendFile('favicon.svg', { root: path.join(__dirname, 'public') }));
 
 // ===== Salud del propio dashboard =====
@@ -215,6 +422,53 @@ io.use((socket, next) => {
 
 app.use(requireDashAuth);
 
+// Administración privada del intercambio público. Las claves se muestran una
+// sola vez al crearse; en disco solo se almacena su hash para poder validarlas.
+app.get('/api/public-files/admin', (req, res) => {
+  cleanPublicFiles();
+  res.json({ ok: true, cleanupEnabled: publicFileCleanupEnabled, defaultTtlMinutes: publicFileDefaultTtlMinutes, files: publicFiles, keys: publicPersistenceKeys.map(({ hash, ...key }) => key) });
+});
+app.put('/api/public-files/settings', express.json(), (req, res) => {
+  const minutes = Math.round(Number(req.body?.defaultTtlMinutes));
+  if (!Number.isFinite(minutes) || minutes < 5 || minutes > PUBLIC_FILE_TTL_MIN) return res.status(400).json({ ok: false, error: 'La duración debe estar entre 5 minutos y 24 horas.' });
+  publicFileDefaultTtlMinutes = minutes;
+  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo guardar la duración.' }); }
+  res.json({ ok: true, defaultTtlMinutes: publicFileDefaultTtlMinutes });
+});
+app.post('/api/public-files/keys', express.json(), (req, res) => {
+  const label = String(req.body?.label || 'Clave persistente').trim().slice(0, 60) || 'Clave persistente';
+  const rawKey = `nexo_${crypto.randomBytes(18).toString('base64url')}`;
+  const key = { id: crypto.randomBytes(8).toString('hex'), label, hash: hashPersistenceKey(rawKey), createdAt: Date.now(), revokedAt: null };
+  publicPersistenceKeys.unshift(key);
+  try { savePublicFiles(); } catch { publicPersistenceKeys.shift(); return res.status(500).json({ ok: false, error: 'No se pudo guardar la clave.' }); }
+  res.status(201).json({ ok: true, key: { ...key, hash: undefined, value: rawKey } });
+});
+app.delete('/api/public-files/keys/:id', (req, res) => {
+  const key = publicPersistenceKeys.find((item) => item.id === req.params.id);
+  if (!key) return res.status(404).json({ ok: false, error: 'Clave no encontrada.' });
+  key.revokedAt = Date.now();
+  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo revocar la clave.' }); }
+  res.json({ ok: true });
+});
+app.delete('/api/public-files/:id', (req, res) => {
+  const index = publicFiles.findIndex((item) => item.id === req.params.id);
+  if (index === -1) return res.status(404).json({ ok: false, error: 'Archivo no encontrado.' });
+  const [file] = publicFiles.splice(index, 1);
+  try { fs.unlinkSync(path.join(PUBLIC_FILES_DIR, `${file.id}.bin`)); } catch {}
+  try { savePublicFiles(); } catch { return res.status(500).json({ ok: false, error: 'No se pudo actualizar el inventario.' }); }
+  res.json({ ok: true });
+});
+
+// Vistas de primer nivel: comparten la sesión y los datos en vivo, pero cada
+// URL muestra un área de trabajo concreta para evitar una página interminable.
+const DASHBOARD_PAGES = new Set(['/overview', '/performance', '/network', '/visitors', '/gateway', '/infrastructure', '/media', '/processes', '/actions', '/sessions']);
+app.get(Array.from(DASHBOARD_PAGES), (req, res) => res.sendFile('index.html', { root: path.join(__dirname, 'public') }));
+
+// Funcionalidades extendidas (extras.js): sus rutas quedan tras
+// requireDashAuth, así que exigen sesión como todo lo demás.
+extras.registerRoutes(app);
+extras.boot();
+
 app.post('/api/change-password', express.json(), (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!verifyPassword(currentPassword)) {
@@ -259,6 +513,8 @@ app.get('/api/stats', (req, res) => {
         bluetooth: bluetoothCache,
         history: { short: shortHistory, daily: dailyHistory },
         pollingActive: clientCount > 0,
+        // Claves NUEVAS (extras.js) — lo anterior se mantiene intacto.
+        ...extras.snapshot(),
     });
 });
 
@@ -335,9 +591,23 @@ function runCmd(cmd, args, opts = {}) {
   });
 }
 
+// Bitácora local, acotada a las últimas 200 operaciones. No guarda claves ni
+// parámetros sensibles: sirve para saber qué se ejecutó, cuándo y si funcionó.
+const ACTION_AUDIT_PATH = path.join(__dirname, 'data', 'action-audit.json');
+function readActionAudit() {
+  try { const raw = JSON.parse(fs.readFileSync(ACTION_AUDIT_PATH, 'utf8')); return Array.isArray(raw) ? raw : []; } catch { return []; }
+}
+function auditAction(action, ok, detail) {
+  const rows = readActionAudit();
+  rows.unshift({ id: crypto.randomBytes(6).toString('hex'), at: Date.now(), action, ok: !!ok, detail: String(detail || '').slice(0, 180) });
+  try { fs.mkdirSync(path.dirname(ACTION_AUDIT_PATH), { recursive: true }); fs.writeFileSync(ACTION_AUDIT_PATH, JSON.stringify(rows.slice(0, 200), null, 2), { mode: 0o600 }); } catch {}
+}
+app.get('/api/actions/audit', (req, res) => res.json({ ok: true, entries: readActionAudit().slice(0, 50) }));
+
 app.post('/api/actions/restart-openclaw', express.json(), async (req, res) => {
   const r = await runCmd('systemctl', ['--user', 'restart', GATEWAY_UNIT], { env: XDG_ENV });
   if (r.ok) { ocFailures.status = undefined; delete ocFailures.status; }
+  auditAction('Reiniciar OpenClaw', r.ok, r.ok ? 'Gateway reiniciado' : (r.error || r.stderr));
   res.json(r);
 });
 
@@ -348,6 +618,7 @@ app.post('/api/actions/free-ram', express.json(), async (req, res) => {
   await runCmd('sync');
   const r = await runCmd('sudo', ['/usr/sbin/sysctl', '-w', 'vm.drop_caches=1']);
   const sys = await getSysStats();
+  auditAction('Liberar RAM', r.ok, r.ok ? `Disponible: ${before ?? '?'} GB → ${sys.memAvailGB ?? '?'} GB` : r.error || r.stderr);
   res.json({ ...r, beforeGB: before, afterGB: sys.memAvailGB ?? null });
 });
 
@@ -358,17 +629,20 @@ app.post('/api/actions/free-swap', express.json(), async (req, res) => {
   const r = off.ok && on.ok ? on : { ok: false, error: off.error || on.error };
   const sys = await getSysStats();
   const afterMiB = Math.round((sys.swapUsedMB ?? 0));
+  auditAction('Liberar swap', r.ok, r.ok ? `${beforeMiB} MiB → ${afterMiB} MiB` : r.error || r.stderr);
   res.json({ ...r, beforeMiB, afterMiB });
 });
 
 app.post('/api/actions/doctor-fix', express.json(), async (req, res) => {
   const r = await runCmd('openclaw', ['doctor', '--fix'], { env: XDG_ENV, timeout: 120000 });
   if (r.ok) { ocFailures.status = undefined; delete ocFailures.status; }
+  auditAction('Doctor Fix', r.ok, r.ok ? 'Finalizado' : r.error || r.stderr);
   res.json(r);
 });
 
 app.post('/api/actions/reboot', express.json(), async (req, res) => {
   if (!verifyPassword(req.body?.password)) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
+  auditAction('Reiniciar servidor', true, 'Reinicio programado');
   res.json({ ok: true, message: 'Reiniciando el servidor…' });
   setTimeout(() => execFile('sudo', ['reboot'], () => {}), 1500);
 });
@@ -377,6 +651,7 @@ app.post('/api/actions/shutdown', express.json(), async (req, res) => {
   if (!verifyPassword(req.body?.password)) return res.status(403).json({ ok: false, error: 'Clave incorrecta' });
   const hours = Math.min(24, Math.max(1, Number(req.body?.hours) || 1));
   const wakeAt = Math.floor(Date.now() / 1000) + hours * 3600;
+  auditAction('Apagar servidor', true, `Apagado programado; despertar en ${hours} h`);
   res.json({ ok: true, message: `Apagando — despertará en ${hours}h`, wakeAt });
   setTimeout(() => execFile('sudo', ['rtcwake', '-m', 'off', '-t', String(wakeAt)], () => {}), 1500);
 });
@@ -885,9 +1160,26 @@ function readAccessLogTail(maxBytes = 4 * 1024 * 1024) {
     }
 }
 
+// Dominio principal del proyecto: toda visita a *.corposoft.net se etiqueta
+// con este dominio y su subdominio ("" = dominio raíz).
+const PRIMARY_DOMAIN = 'corposoft.net';
+
+function splitDomain(host) {
+    const h = String(host || '').trim().toLowerCase().split(':')[0];
+    if (!h) return { host: '', domain: PRIMARY_DOMAIN, subdomain: '' };
+    if (h === PRIMARY_DOMAIN || h.endsWith('.' + PRIMARY_DOMAIN)) {
+        const sub = h === PRIMARY_DOMAIN ? '' : h.slice(0, -(PRIMARY_DOMAIN.length + 1));
+        return { host: h, domain: PRIMARY_DOMAIN, subdomain: sub };
+    }
+    return { host: h, domain: h, subdomain: '' };
+}
+
 async function getVisitors() {
     const now = Date.now();
-    const byIp = new Map();
+    // Una IP no representa una persona ni un dispositivo: una casa/oficina
+    // puede compartir IP. Conservamos sesiones separadas por IP + navegador
+    // (User-Agent) + host para mostrar móvil y escritorio por separado.
+    const byVisitor = new Map();
     try {
         const text = readAccessLogTail();
         const lines = text.split('\n');
@@ -931,10 +1223,10 @@ async function getVisitors() {
             if (host) rec.hosts.add(host);
             if (ts > rec.lastSeen) { rec.lastSeen = ts; rec.lastUri = uri; rec.lastStatus = status; rec.ua = ua; if (host) rec.lastHost = host; else rec.lastHost = rec.lastHost || null; }
             if (ts < rec.firstSeen) rec.firstSeen = ts;
-            byIp.set(ip, rec);
+            byVisitor.set(key, rec);
         }
     } catch {}
-    const active = Array.from(byIp.values())
+    const active = Array.from(byVisitor.values())
         .map(r => {
             const { device, browser } = parseUserAgent(r.ua);
             const idleMs = now - r.lastSeen;
@@ -944,6 +1236,9 @@ async function getVisitors() {
             const baseDomain = lastHost ? baseDomainOf(lastHost) : null;
             return {
                 ip: r.ip,
+                host: r.host || r.domain,
+                domain: r.domain,
+                subdomain: r.subdomain || '',
                 device,
                 browser,
                 requests: r.requests,
@@ -1017,6 +1312,8 @@ async function getSysStats() {
             memAvailPct: memAvailPct !== null ? Number(memAvailPct.toFixed(1)) : null,
             swapUsedPct: swapUsedPct !== null ? Number(swapUsedPct.toFixed(1)) : null,
             swapUsedMB: (swapTotalKB && swapFreeKB) ? Math.round((swapTotalKB - swapFreeKB) / 1024) : 0,
+            swapTotalMB: swapTotalKB ? Math.round(swapTotalKB / 1024) : 0,
+            swapFreeMB: swapFreeKB ? Math.round(swapFreeKB / 1024) : 0,
             diskUsedPct: rootFs ? Number(rootFs.use.toFixed(1)) : null,
             diskUsedGB: rootFs ? Number((rootFs.used / 1e9).toFixed(1)) : null,
             diskTotalGB: rootFs ? Number((rootFs.size / 1e9).toFixed(1)) : null,
@@ -1127,7 +1424,7 @@ async function pollPing() {
 
 // ===== Poll global (una sola vez para todos los clientes conectados) =====
 let clientCount = 0;
-let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null, ivVisitors = null;
+let ivFast = null, ivProcs = null, ivGateway = null, ivGatewayLogs = null, ivSessions = null, ivPing = null, ivBluetooth = null, ivVisitors = null, ivExtrasSlow = null;
 
 function startPolling() {
     if (ivFast) return;
@@ -1135,7 +1432,8 @@ function startPolling() {
         const sys = await getSysStats();
         const player = await getPlayerStatus();
         playerCache = player;
-        io.emit('stats', { sys, memHistory, cpuHistory, player, history: { short: shortHistory, daily: dailyHistory } });
+        const { io: ioStats, alerts } = await extras.pollFast(sys);
+        io.emit('stats', { sys, memHistory, cpuHistory, player, history: { short: shortHistory, daily: dailyHistory }, io: ioStats, alerts });
     }, 2000);
     ivProcs = setInterval(async () => {
         const processes = await getTopProcesses();
@@ -1150,6 +1448,12 @@ function startPolling() {
         bluetoothCache = await getBluetoothInfo();
         io.emit('stats', { bluetooth: bluetoothCache });
     }, 20000);
+    // Fuentes pesadas de extras (docker, servicios systemd, SMART, checks):
+    // cada 30 s bastan y cuidan la CPU del E-300.
+    ivExtrasSlow = setInterval(async () => {
+        const extra = await extras.pollSlow();
+        io.emit('stats', extra);
+    }, 30000);
     getSysStats().then(sys => io.emit('stats', { sys, memHistory, cpuHistory }));
     getTopProcesses().then(processes => io.emit('stats', { processes }));
     getPlayerStatus().then(player => { playerCache = player; io.emit('stats', { player }); });
@@ -1159,13 +1463,14 @@ function startPolling() {
     pollSessions();
     pollPing();
     pollVisitors();
+    extras.pollSlow().then((extra) => io.emit('stats', extra));
 }
 
 function stopPolling() {
     clearInterval(ivFast); clearInterval(ivProcs); clearInterval(ivGateway);
     clearInterval(ivGatewayLogs); clearInterval(ivSessions); clearInterval(ivPing);
-    clearInterval(ivBluetooth); clearInterval(ivVisitors);
-    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = ivVisitors = null;
+    clearInterval(ivBluetooth); clearInterval(ivVisitors); clearInterval(ivExtrasSlow);
+    ivFast = ivProcs = ivGateway = ivGatewayLogs = ivSessions = ivPing = ivBluetooth = ivVisitors = ivExtrasSlow = null;
 }
 
 io.on('connection', (socket) => {
@@ -1184,6 +1489,7 @@ io.on('connection', (socket) => {
       player: playerCache,
       bluetooth: bluetoothCache,
       visitors: visitorsCache,
+      ...extras.snapshot(),
   });
 
   socket.on('disconnect', () => {
