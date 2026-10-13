@@ -362,13 +362,16 @@
         const playerVolumeMobile = document.getElementById('playerVolumeMobile');
 
         function setVolumeUI(val) {
-            playerVolume.value = val;
-            playerVolumeMobile.value = val;
-            q('playerVolumeLabel').textContent = val + '%';
-            q('playerVolumeLabelMobile').textContent = val + '%';
+            if (playerVolume) playerVolume.value = val;
+            if (playerVolumeMobile) playerVolumeMobile.value = val;
+            const volumeLabel = q('playerVolumeLabel');
+            const volumeLabelMobile = q('playerVolumeLabelMobile');
+            if (volumeLabel) volumeLabel.textContent = val + '%';
+            if (volumeLabelMobile) volumeLabelMobile.textContent = val + '%';
         }
 
         function wireVolumeSlider(el) {
+            if (!el) return;
             el.addEventListener('pointerdown', () => guardVolume(60000));
             el.addEventListener('input', () => setVolumeUI(Number(el.value)));
             el.addEventListener('change', () => {
@@ -382,13 +385,13 @@
         wireVolumeSlider(playerVolumeMobile);
 
         function adjustVolume(delta) {
-            const next = Math.min(100, Math.max(0, Number(playerVolume.value) + delta));
+            const next = Math.min(100, Math.max(0, Number(playerVolume?.value || 0) + delta));
             setVolumeUI(next);
             guardVolume(2500);
             postPlayer('volume', { volume: next });
         }
-        document.getElementById('volDown').addEventListener('click', () => adjustVolume(-5));
-        document.getElementById('volUp').addEventListener('click', () => adjustVolume(5));
+        document.getElementById('volDown')?.addEventListener('click', () => adjustVolume(-5));
+        document.getElementById('volUp')?.addEventListener('click', () => adjustVolume(5));
 
         // ===== Cola de reproducción (acordeón) =====
         document.getElementById('queueToggle').addEventListener('click', async () => {

@@ -332,7 +332,7 @@ app.get('/panels.js', (req, res) => res.sendFile('panels.js', { root: path.join(
 app.get('/login.js', (req, res) => res.sendFile('login.js', { root: path.join(__dirname, 'public') }));
 // Fuentes Inter self-hosted (subset latino .woff2): las pide el CSS antes de la sesión.
 app.get('/fonts/:file', (req, res) => {
-  if (!/^inter-[458]00\.woff2$/.test(req.params.file)) return res.status(404).end();
+  if (!/^inter-[45678]00\.woff2$/.test(req.params.file)) return res.status(404).end();
   res.sendFile(req.params.file, { root: path.join(__dirname, 'public', 'fonts') });
 });
 app.get('/favicon.svg', (req, res) => res.sendFile('favicon.svg', { root: path.join(__dirname, 'public') }));
