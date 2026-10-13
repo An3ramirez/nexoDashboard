@@ -29,6 +29,10 @@
         <form id="uploadForm">
           <label class="upload-drop" for="uploadInput"><strong id="fileName">Elige un archivo</strong><span>o arrástralo aquí</span><input id="uploadInput" type="file" required></label>
           <button class="btn-primary upload-btn" type="submit">Subir y crear enlace</button>
+          <div id="uploadProgressWrap" class="upload-progress hidden" aria-live="polite">
+            <div class="upload-progress-copy"><span id="uploadProgressLabel">Preparando carga…</span><strong id="uploadProgressValue">0%</strong></div>
+            <div class="upload-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="uploadProgressBar"></span></div>
+          </div>
           <p id="uploadResult" class="muted mt-3" role="status">La duración la define el administrador.</p>
         </form>
       </section>

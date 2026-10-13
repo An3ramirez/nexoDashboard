@@ -5,6 +5,37 @@ function fmtBytes(n) {
   if (n >= 1073741824) return `${(n / 1073741824).toFixed(1)} GB`;
   return n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`;
 }
+function setProgress(percent, label) {
+  const value = Math.min(100, Math.max(0, Math.round(percent)));
+  $('uploadProgressWrap').classList.remove('hidden');
+  $('uploadProgressBar').style.width = `${value}%`;
+  $('uploadProgressValue').textContent = `${value}%`;
+  $('uploadProgressLabel').textContent = label;
+  $('uploadProgressBar').parentElement.setAttribute('aria-valuenow', String(value));
+}
+function uploadFile(file) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/public-files');
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.setRequestHeader('X-File-Name', file.name);
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      setProgress((event.loaded / event.total) * 100, `Subiendo ${fmtBytes(event.loaded)} de ${fmtBytes(event.total)}…`);
+    };
+    xhr.onerror = () => reject(new Error('La conexión se interrumpió durante la subida.'));
+    xhr.onabort = () => reject(new Error('La subida fue cancelada.'));
+    xhr.onload = () => {
+      const type = xhr.getResponseHeader('content-type') || '';
+      let data;
+      try { data = type.includes('application/json') ? JSON.parse(xhr.responseText) : null; } catch {}
+      if (!data) return reject(new Error(`La carga fue rechazada por un servidor intermedio (HTTP ${xhr.status || 'sin respuesta'}). Revisa el límite de carga del proxy.`));
+      if (xhr.status < 200 || xhr.status >= 300) return reject(new Error(data.error || `No se pudo subir el archivo (HTTP ${xhr.status}).`));
+      resolve(data);
+    };
+    xhr.send(file);
+  });
+}
 function until(ts) { const m = Math.max(0, Math.ceil((ts - Date.now()) / 60000)); return m < 60 ? `${m} min` : `${Math.ceil(m / 60)} h`; }
 function expiry(ts) { return ts ? `Expira en ${until(ts)} · ${new Date(ts).toLocaleString('es-CO', { dateStyle:'short', timeStyle:'short' })}` : 'Sin caducidad'; }
 function esc(s) { return String(s || '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -21,8 +52,8 @@ $('uploadInput').addEventListener('change', (e) => { $('fileName').textContent =
 $('uploadForm').addEventListener('submit', async (e) => {
   e.preventDefault(); const file = $('uploadInput').files[0]; if (!file) return;
   if (file.size > fileState.maxBytes) { $('uploadResult').textContent = 'El archivo excede el tamaño permitido.'; return; }
-  const button = e.submitter; button.disabled = true; $('uploadResult').textContent = 'Subiendo…';
-  try { const r = await fetch('/api/public-files', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-File-Name': file.name }, body: file }); const data = await r.json(); if (!r.ok) throw new Error(data.error); const link = `${location.origin}${data.downloadUrl}`; $('uploadResult').innerHTML = `<strong>Archivo listo.</strong> ${expiry(data.file.expiresAt)}<div class="share-link"><input id="newShareLink" readonly value="${esc(link)}" aria-label="Enlace del archivo subido"><button class="btn-ghost icon-btn" type="button" id="copyNewShareLink">Copiar enlace</button></div>`; $('copyNewShareLink').addEventListener('click', async () => { await navigator.clipboard.writeText(link); $('copyNewShareLink').textContent = 'Copiado'; }); $('uploadForm').reset(); $('fileName').textContent = 'Elige un archivo'; await load(); } catch (err) { $('uploadResult').textContent = err.message || 'No se pudo subir el archivo.'; } finally { button.disabled = false; }
+  const button = e.submitter; button.disabled = true; $('uploadResult').textContent = 'Subiendo…'; setProgress(0, `Preparando ${fmtBytes(file.size)}…`);
+  try { const data = await uploadFile(file); setProgress(100, 'Archivo guardado.'); const link = `${location.origin}${data.downloadUrl}`; $('uploadResult').innerHTML = `<strong>Archivo listo.</strong> ${expiry(data.file.expiresAt)}<div class="share-link"><input id="newShareLink" readonly value="${esc(link)}" aria-label="Enlace del archivo subido"><button class="btn-ghost icon-btn" type="button" id="copyNewShareLink">Copiar enlace</button></div>`; $('copyNewShareLink').addEventListener('click', async () => { await navigator.clipboard.writeText(link); $('copyNewShareLink').textContent = 'Copiado'; }); $('uploadForm').reset(); $('fileName').textContent = 'Elige un archivo'; await load(); } catch (err) { $('uploadResult').textContent = err.message || 'No se pudo subir el archivo.'; } finally { button.disabled = false; }
 });
 function closeModal() { $('cleanupModal').classList.add('hidden'); $('cleanupModal').classList.remove('flex'); }
 $('cleanupToggle').addEventListener('click', () => { $('cleanupPassword').value = ''; $('cleanupResult').textContent = ''; $('cleanupCopy').textContent = fileState.cleanupEnabled ? 'Vas a detener el borrado automático. Los archivos actuales dejarán de caducar hasta reactivarlo.' : 'Vas a reactivar el borrado automático para los archivos ya caducados.'; $('cleanupModal').classList.remove('hidden'); $('cleanupModal').classList.add('flex'); $('cleanupPassword').focus(); });
