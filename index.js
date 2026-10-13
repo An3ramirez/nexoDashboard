@@ -319,6 +319,7 @@ function getCookie(req, name) {
 // punto lo hacía responder 404 siempre. Con `root`, solo se valida la ruta
 // relativa a esa raíz.
 app.get('/login', (req, res) => res.sendFile('login.html', { root: path.join(__dirname, 'public') }));
+app.get('/app-icon.png', (req, res) => res.sendFile('app-icon.png', { root: path.join(__dirname, 'public') }));
 app.get('/theme.css', (req, res) => res.sendFile('theme.css', { root: path.join(__dirname, 'public') }));
 // Tailwind compilado y los scripts extraídos: son estáticos, sin datos, y los
 // necesita el navegador ANTES de tener sesión (la página de login usa CSS y JS).
