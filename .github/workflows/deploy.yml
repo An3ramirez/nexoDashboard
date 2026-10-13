@@ -1,0 +1,67 @@
+name: Deploy dashboard
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dashboard-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Este runner debe estar instalado en el servidor privado 192.168.1.61.
+    runs-on: [self-hosted, linux, x64, nexo-server]
+    timeout-minutes: 15
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@v4
+
+      - name: Validar y desplegar
+        shell: bash
+        env:
+          DEPLOY_DIR: /home/andres/.openclaw/workspace/dashboard-server
+          FILES_DIR: /home/andres/nexodashboard-files
+        run: |
+          set -euo pipefail
+          node --check index.js
+          node --check extras.js
+          test -d "$DEPLOY_DIR"
+          test -d "$FILES_DIR"
+
+          # El código se actualiza, pero las credenciales, archivos subidos y
+          # datos runtime permanecen fuera del checkout desplegado.
+          rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='auth.json' \
+            --exclude='data/' \
+            --exclude='node_modules/' \
+            ./ "$DEPLOY_DIR/"
+
+          cd "$DEPLOY_DIR"
+          npm ci --omit=dev
+
+          old_pid="$(pgrep -f '^/usr/bin/node index.js$' || true)"
+          if [ -n "$old_pid" ]; then
+            kill $old_pid
+            for _ in $(seq 1 20); do
+              pgrep -f '^/usr/bin/node index.js$' >/dev/null || break
+              sleep 1
+            done
+          fi
+          nohup env PUBLIC_FILES_DIR="$FILES_DIR" /usr/bin/node index.js >/tmp/nexodashboard.log 2>&1 </dev/null &
+
+          for _ in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:3000/health >/dev/null; then
+              echo "Dashboard desplegado correctamente"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "El dashboard no respondió en el puerto 3000"
+          tail -n 80 /tmp/nexodashboard.log || true
+          exit 1
