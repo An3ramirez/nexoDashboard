@@ -1,6 +1,11 @@
 /* Vistas del dashboard: una URL por área, sin duplicar el estado en vivo. */
 'use strict';
 (function () {
+  // El estilo inicial de .reveal tiene opacidad 0. No había un observador que
+  // añadiera .in, así que las secciones quedaban invisibles aunque recibieran
+  // telemetría. Activarlas al cargar mantiene visibles todas las páginas.
+  document.querySelectorAll('.reveal').forEach((element) => element.classList.add('in'));
+
   const page = ({ '/': 'overview', '/overview': 'overview', '/performance': 'performance', '/network': 'network', '/visitors': 'visitors', '/gateway':'gateway', '/infrastructure':'infrastructure', '/media':'media', '/processes':'processes', '/actions':'actions', '/sessions':'sessions' })[location.pathname] || 'overview';
   const paths = { overview:'/overview', performance:'/performance', network:'/network', visitors:'/visitors', gateway:'/gateway', infrastructure:'/infrastructure', media:'/media', processes:'/processes', actions:'/actions', sessions:'/sessions' };
   const keep = {

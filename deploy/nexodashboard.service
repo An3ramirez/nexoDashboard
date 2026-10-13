@@ -1,0 +1,16 @@
+[Unit]
+Description=NexoDashboard
+After=network.target
+
+[Service]
+Type=simple
+User=andres
+WorkingDirectory=/home/andres/.openclaw/workspace/dashboard-server
+Environment=PUBLIC_FILES_DIR=/home/andres/nexodashboard-files
+UMask=0077
+ExecStart=/usr/bin/node /home/andres/.openclaw/workspace/dashboard-server/index.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

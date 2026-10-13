@@ -3,8 +3,97 @@
         // sesiones y del User-Agent/IP de los visitantes — el UA lo controla quien
         // visita, así que sin esto una petición con UA malicioso se ejecuta aquí.
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, history: { short: [], daily: [] }, range: 'short' };
+        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], swapHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: 'short' };
         let lastArtKey = null;
+
+        function setValue(key, value) {
+            const el = q(key) || document.getElementById(key);
+            if (el) el.textContent = value == null || value === '' ? '--' : String(value);
+        }
+
+        function renderOverview(sys) {
+            setValue('heroHost', sys.hostname || 'Servidor');
+            setValue('heroOs', sys.osDistro || '--');
+            setValue('heroUptime', sys.uptime != null ? fmtUptime(sys.uptime) : '--');
+            setValue('cpuHero', sys.cpu != null ? `${sys.cpu}%` : '--');
+            setValue('ramHero', sys.memUsed != null ? `${sys.memUsed}%` : '--');
+            setValue('diskHero', sys.diskUsedPct != null ? `${sys.diskUsedPct}%` : '--');
+            setValue('tempHero', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
+            setValue('swapHero', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
+            const fmtMem = (mb) => mb == null || !Number.isFinite(Number(mb)) ? '--' : Number(mb) >= 1024 ? `${(Number(mb) / 1024).toFixed(1)} GB` : `${Math.round(Number(mb))} MB`;
+            const swapConfigured = Number(sys.swapTotalMB) > 0 && sys.swapUsedPct != null;
+            setValue('swapHeroDetail', swapConfigured ? `${fmtMem(sys.swapUsedMB)} / ${fmtMem(sys.swapTotalMB)} usados` : 'No configurada');
+            [[ 'ramBar', sys.memUsed, 85, 95 ], [ 'diskBar', sys.diskUsedPct, 85, 95 ]].forEach(([id, value, warnAt, critAt]) => {
+                const bar = document.getElementById(id);
+                if (bar && value != null && Number.isFinite(Number(value))) {
+                    const pct = Math.max(0, Math.min(100, Number(value)));
+                    const level = statusLevel(pct, warnAt, critAt);
+                    bar.style.width = `${pct}%`;
+                    bar.style.background = STATUS_VAR[level];
+                }
+            });
+            if (swapConfigured) {
+                const pct = Math.max(0, Math.min(100, Number(sys.swapUsedPct)));
+                const freeMB = Math.max(0, Number(sys.swapTotalMB) - Number(sys.swapUsedMB || 0));
+                const level = statusLevel(pct, 75, 90);
+                setValue('swapPerfValue', `${Math.round(pct)}%`);
+                setValue('swapPerfDetail', `${fmtMem(sys.swapUsedMB)} usados`);
+                setValue('swapFreeLabel', `Libre: ${fmtMem(freeMB)}`);
+                setValue('swapTotalLabel', `Total: ${fmtMem(sys.swapTotalMB)}`);
+                setValue('swapPerfStatus', level === 'critical' ? 'Crítica' : level === 'warning' ? 'Alta' : 'Normal');
+                const status = q('swapPerfStatus');
+                if (status) status.className = `card-tools pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+                const bar = document.getElementById('swapBar');
+                if (bar) { bar.style.width = `${pct}%`; bar.style.background = STATUS_VAR[level]; }
+                applyStatus('swapPerf', pct, 75, 90);
+            } else {
+                setValue('swapPerfValue', 'No configurada');
+                setValue('swapPerfDetail', 'El sistema no tiene memoria Swap disponible');
+                setValue('swapFreeLabel', 'Libre: --');
+                setValue('swapTotalLabel', 'Total: --');
+                setValue('swapPerfStatus', 'No disponible');
+                const status = q('swapPerfStatus');
+                if (status) status.className = 'card-tools pill';
+                const bar = document.getElementById('swapBar');
+                if (bar) bar.style.width = '0%';
+            }
+            applyStatus('cpuHero', sys.cpu, 85, 95);
+            applyStatus('ramHero', sys.memUsed, 85, 95);
+            applyStatus('diskHero', sys.diskUsedPct, 85, 95);
+            if (sys.swapUsedPct != null) applyStatus('swapHero', sys.swapUsedPct, 75, 90);
+
+            setValue('healthCpu', sys.cpu != null ? `${sys.cpu}%` : '--');
+            setValue('healthTemp', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
+            setValue('healthSwap', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
+
+            const checks = [
+                [sys.cpu, 85, 95, 'CPU'], [sys.memUsed, 85, 95, 'RAM'],
+                [sys.diskUsedPct, 85, 95, 'disco'], [sys.cpuTemp, 75, 85, 'temperatura'],
+                [sys.swapUsedPct, 75, 90, 'swap'],
+            ];
+            const critical = checks.filter(([value, , limit]) => value != null && value >= limit);
+            const warning = checks.filter(([value, warnAt, limit]) => value != null && value >= warnAt && value < limit);
+            const alerts = Array.isArray(state.alerts) ? state.alerts.length : 0;
+            const level = critical.length ? 'critical' : (warning.length || alerts ? 'warning' : 'good');
+            const levelEl = document.getElementById('healthLevel');
+            if (levelEl) {
+                levelEl.textContent = level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Estable';
+                levelEl.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+            }
+            const title = document.getElementById('healthTitle');
+            if (title) title.textContent = level === 'critical' ? 'Requiere atención inmediata' : level === 'warning' ? 'Servidor bajo observación' : 'Servidor funcionando bien';
+            const copy = document.getElementById('healthCopy');
+            if (copy) {
+                const causes = critical.length ? critical.map((item) => item[3]) : warning.map((item) => item[3]);
+                copy.textContent = causes.length ? `Revisa ${causes.join(', ')}.` : alerts ? `${alerts} alerta${alerts === 1 ? '' : 's'} activa${alerts === 1 ? '' : 's'}.` : 'Las métricas principales están dentro de los umbrales.';
+            }
+            setValue('healthAlerts', alerts);
+            const badge = document.getElementById('heroStatus');
+            if (badge) {
+                badge.textContent = `● ${level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Operativo'}`;
+                badge.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+            }
+        }
 
         function fmtTime(sec) {
             if (sec == null || isNaN(sec)) return '0:00';
@@ -56,6 +145,76 @@
                     stroke-linecap="round" stroke-linejoin="round"></polyline>`;
         }
 
+        function drawSeriesChart(svg, tracks, fixedMax = null) {
+            if (!svg) return;
+            const box = (svg.getAttribute('viewBox') || '0 0 300 90').split(/\s+/).map(Number);
+            const w = box[2] || 300, h = box[3] || 90;
+            const pad = { left: 4, right: 5, top: 5, bottom: 6 };
+            const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
+            const ns = 'http://www.w3.org/2000/svg';
+            const make = (name, attrs) => {
+                const node = document.createElementNS(ns, name);
+                Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, String(value)));
+                return node;
+            };
+            svg.replaceChildren();
+            for (let i = 0; i <= 4; i++) {
+                const y = pad.top + plotH * i / 4;
+                svg.appendChild(make('line', { x1: pad.left, y1: y, x2: w - pad.right, y2: y, class: 'chart-grid' }));
+            }
+            const all = tracks.flatMap((track) => track.values.map(Number).filter(Number.isFinite));
+            if (!all.length) {
+                const label = make('text', { x: w / 2, y: h / 2 + 4, 'text-anchor': 'middle', class: 'chart-axis' });
+                label.textContent = 'Esperando muestras';
+                svg.appendChild(label);
+                return;
+            }
+            const max = fixedMax || Math.max(1, Math.ceil(Math.max(...all) * 1.15));
+            tracks.forEach((track) => {
+                const values = track.values.map(Number).filter(Number.isFinite);
+                if (!values.length) return;
+                const plotted = values.length === 1 ? [values[0], values[0]] : values;
+                const points = plotted.map((value, index) => ({
+                    x: pad.left + plotW * index / Math.max(1, plotted.length - 1),
+                    y: pad.top + plotH - Math.max(0, Math.min(max, value)) / max * plotH,
+                }));
+                const line = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+                const area = `${line} L${points[points.length - 1].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} L${points[0].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
+                svg.appendChild(make('path', { d: area, fill: track.color, opacity: '0.1' }));
+                svg.appendChild(make('path', { d: line, fill: 'none', stroke: track.color, 'stroke-width': h < 80 ? 2.5 : 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+                const last = points[points.length - 1];
+                svg.appendChild(make('circle', { cx: last.x, cy: last.y, r: h < 80 ? 3 : 2.5, fill: track.color, stroke: 'var(--surface-solid)', 'stroke-width': 1.5 }));
+            });
+        }
+
+        function renderMetricCharts() {
+            const history = activeSeries();
+            const values = (items, key) => (Array.isArray(items) ? items : []).map((sample) =>
+                sample && typeof sample === 'object' ? sample[key] : sample
+            ).filter((value) => value != null && Number.isFinite(Number(value)));
+            const cpu = values(history.length ? history : state.cpuHistory, 'cpu');
+            const ram = values(history.length ? history : state.memHistory, 'ram');
+            const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+            const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
+            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: (state.swapHistory || []).map((sample) => sample.pct), color: color('--status-warning') }], 100);
+            drawSeriesChart(document.querySelector('[data-chart="history"]'), [
+                { values: history.map((sample) => sample.cpu), color: cpuColor },
+                { values: history.map((sample) => sample.ram), color: ramColor },
+            ], 100);
+            const net = state.io?.net?.hist || [];
+            drawSeriesChart(document.querySelector('[data-chart="net"]'), [
+                { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
+                { values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
+            ]);
+            const disk = state.io?.disk?.hist || [];
+            drawSeriesChart(document.querySelector('[data-chart="dio"]'), [
+                { values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
+                { values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
+            ]);
+        }
+
         // Etiquetas de tiempo relativo bajo cada sparkline ("-12 min" … "ahora").
         function setRangeLabels(samples) {
             const fmt = (agoMs) => {
@@ -89,6 +248,8 @@
             const oc = state.oc || {};
             const player = state.player || {};
             const bt = state.bluetooth || {};
+
+            renderOverview(sys);
 
             const btInfo = document.getElementById('bluetoothInfo');
             if (btInfo) {
@@ -141,7 +302,7 @@
                 q('playerArtist').textContent = '--';
             }
 
-            if (sys.cpu != null) { q('cpu').textContent = sys.cpu + '%'; applyStatus('cpu', sys.cpu, 70, 90); }
+            if (sys.cpu != null) { q('cpu').textContent = sys.cpu + '%'; applyStatus('cpu', sys.cpu, 85, 95); }
             if (sys.cpuTemp) q('temp').textContent = '🌡️ ' + sys.cpuTemp + '°C';
 
             if (sys.memUsed != null) { q('ram').textContent = sys.memUsed + '%'; applyStatus('ram', sys.memUsed, 80, 92); }
@@ -248,18 +409,23 @@
             const procs = state.processes || [];
             if (procs.length > 0) {
                 const container = document.getElementById('processesContainer');
-                let html = '<div class="overflow-x-auto"><table class="data-table">';
-                html += '<thead><tr><th>Proceso</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead><tbody>';
-                procs.forEach(p => {
-                    html += `<tr>
-                        <td style="color:var(--ink)">${esc(p.name || '?')}</td>
-                        <td>${esc(p.pid)}</td>
-                        <td>${esc(p.cpu)}%</td>
-                        <td>${p.memRss} MB</td>
-                    </tr>`;
-                });
-                html += '</tbody></table></div>';
-                container.innerHTML = html;
+                // Algunas vistas no incluyen el panel de procesos. Los datos
+                // pueden seguir llegando por Socket.IO, pero no deben romper
+                // el renderizado del resto del dashboard.
+                if (container) {
+                    let html = '<div class="overflow-x-auto"><table class="data-table">';
+                    html += '<thead><tr><th>Proceso</th><th>PID</th><th>CPU</th><th>RAM</th></tr></thead><tbody>';
+                    procs.forEach(p => {
+                        html += `<tr>
+                            <td style="color:var(--ink)">${esc(p.name || '?')}</td>
+                            <td>${esc(p.pid)}</td>
+                            <td>${esc(p.cpu)}%</td>
+                            <td>${p.memRss} MB</td>
+                        </tr>`;
+                    });
+                    html += '</tbody></table></div>';
+                    container.innerHTML = html;
+                }
             }
 
             // ===== Visitantes en tiempo real =====
@@ -303,13 +469,25 @@
             } else {
                 visContainer.innerHTML = '<div class="text-xs text-white/30 text-center py-4">Sin visitantes en los últimos 5 minutos</div>';
             }
+
+            window.__nexoState = state;
+            window.NexoInsights?.render(state);
+            window.NexoPanels?.render(state);
+            renderMetricCharts();
         }
 
         const socket = io();
         socket.on('connect', render);
         socket.on('disconnect', render);
         socket.on('stats', (data) => {
-            if (data.sys) state.sys = data.sys;
+            if (data.sys) {
+                state.sys = data.sys;
+                const pct = Number(data.sys.swapUsedPct);
+                if (Number.isFinite(pct) && Number(data.sys.swapTotalMB) > 0) {
+                    state.swapHistory.push({ t: Date.now(), pct });
+                    if (state.swapHistory.length > 180) state.swapHistory.splice(0, state.swapHistory.length - 180);
+                } else state.swapHistory = [];
+            }
             if (data.oc) state.oc = data.oc;
             if (data.models) state.models = data.models;
             if (data.ping !== undefined) state.ping = data.ping;
@@ -321,6 +499,9 @@
             if (data.history) state.history = data.history;
             if (data.bluetooth) state.bluetooth = data.bluetooth;
             if (data.visitors) state.visitors = data.visitors;
+            ['io', 'alerts', 'services', 'docker', 'smart', 'checks', 'links', 'publicFiles'].forEach((key) => {
+                if (data[key] !== undefined) state[key] = data[key];
+            });
             render();
         });
 
@@ -362,13 +543,16 @@
         const playerVolumeMobile = document.getElementById('playerVolumeMobile');
 
         function setVolumeUI(val) {
-            playerVolume.value = val;
-            playerVolumeMobile.value = val;
-            q('playerVolumeLabel').textContent = val + '%';
-            q('playerVolumeLabelMobile').textContent = val + '%';
+            if (playerVolume) playerVolume.value = val;
+            if (playerVolumeMobile) playerVolumeMobile.value = val;
+            const volumeLabel = q('playerVolumeLabel');
+            const volumeLabelMobile = q('playerVolumeLabelMobile');
+            if (volumeLabel) volumeLabel.textContent = val + '%';
+            if (volumeLabelMobile) volumeLabelMobile.textContent = val + '%';
         }
 
         function wireVolumeSlider(el) {
+            if (!el) return;
             el.addEventListener('pointerdown', () => guardVolume(60000));
             el.addEventListener('input', () => setVolumeUI(Number(el.value)));
             el.addEventListener('change', () => {
@@ -382,13 +566,13 @@
         wireVolumeSlider(playerVolumeMobile);
 
         function adjustVolume(delta) {
-            const next = Math.min(100, Math.max(0, Number(playerVolume.value) + delta));
+            const next = Math.min(100, Math.max(0, Number(playerVolume?.value || 0) + delta));
             setVolumeUI(next);
             guardVolume(2500);
             postPlayer('volume', { volume: next });
         }
-        document.getElementById('volDown').addEventListener('click', () => adjustVolume(-5));
-        document.getElementById('volUp').addEventListener('click', () => adjustVolume(5));
+        document.getElementById('volDown')?.addEventListener('click', () => adjustVolume(-5));
+        document.getElementById('volUp')?.addEventListener('click', () => adjustVolume(5));
 
         // ===== Cola de reproducción (acordeón) =====
         document.getElementById('queueToggle').addEventListener('click', async () => {
@@ -565,20 +749,18 @@
         function openModal(action) {
             pendingAction = action;
             modalPassword.value = '';
-            modalConfirmInput.value = '';
-            modalConfirmBtn.disabled = true;
+            if (modalConfirmInput) modalConfirmInput.value = '';
+            modalConfirmBtn.disabled = !modalPassword.value;
             modalConfirmBtn.style.background = 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
-            modalConfirmBtn.style.cursor = 'not-allowed';
+            modalConfirmBtn.style.cursor = modalPassword.value ? 'pointer' : 'not-allowed';
             if (action === 'reboot') {
                 modalTitle.textContent = '♻️ Reiniciar el servidor';
                 modalWarning.textContent = 'El servidor se reiniciará y estará fuera de línea unos minutos. El dashboard y el gateway volverán solos al terminar.';
                 modalHoursRow.classList.add('hidden');
-                modalConfirmWord.textContent = 'REINICIAR';
             } else {
                 modalTitle.textContent = '⏻ Apagar el servidor';
                 modalWarning.textContent = 'El servidor se apagará por completo y se programará su encendido automático (RTC) a la hora elegida.';
                 modalHoursRow.classList.remove('hidden');
-                modalConfirmWord.textContent = 'APAGAR';
             }
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -591,15 +773,14 @@
         }
 
         function checkModalValid() {
-            const word = pendingAction === 'reboot' ? 'REINICIAR' : 'APAGAR';
-            const valid = modalConfirmInput.value === word && modalPassword.value.length > 0;
+            const valid = modalPassword.value.length > 0;
             modalConfirmBtn.disabled = !valid;
             modalConfirmBtn.style.background = valid ? 'var(--status-critical)' : 'color-mix(in srgb, var(--status-critical) 55%, transparent)';
             modalConfirmBtn.style.cursor = valid ? 'pointer' : 'not-allowed';
         }
-        modalConfirmInput.addEventListener('input', checkModalValid);
-        modalPassword.addEventListener('input', checkModalValid);
-        modalCancelBtn.addEventListener('click', closeModal);
+        modalConfirmInput?.addEventListener('input', checkModalValid);
+        modalPassword?.addEventListener('input', checkModalValid);
+        modalCancelBtn?.addEventListener('click', closeModal);
 
         modalConfirmBtn.addEventListener('click', async () => {
             const action = pendingAction;
