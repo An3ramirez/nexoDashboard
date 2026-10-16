@@ -6,3 +6,4 @@ auth.json
 *.sqlite-wal
 *.sqlite-shm
 *.pre-sqlite.bak
+data/public-files/

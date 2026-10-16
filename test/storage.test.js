@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { openStorage, RETENTION_MS } = require('../storage');
+const { DatabaseSync } = require('node:sqlite');
 
 function fixture(t, options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexo-sqlite-test-'));
@@ -21,6 +22,25 @@ function fixture(t, options = {}) {
 const file = { id: 'a'.repeat(36), name: 'test.deb', size: 4, createdAt: 1800000000000, expiresAt: 1800000060000, persistent: false, persistenceKeyId: null, uploader: { ip: 'test-only', userAgent: 'test' } };
 const key = { id: 'b'.repeat(16), hash: 'c'.repeat(64), label: 'prueba', createdAt: 1800000000000, revokedAt: null };
 const snapshot = () => ({ files: [{ ...file }], persistenceKeys: [{ ...key }], cleanupEnabled: false, defaultTtlMinutes: 1440 });
+
+test('migra esquema v1 sin inventar temperatura/Swap y conserva nuevas muestras al reiniciar', t => {
+  const f = fixture(t);
+  const old = new DatabaseSync(f.paths.databasePath);
+  old.exec('CREATE TABLE metric_samples(timestamp INTEGER PRIMARY KEY, cpu REAL NOT NULL, ram REAL NOT NULL); PRAGMA user_version=1;');
+  old.prepare('INSERT INTO metric_samples VALUES (?, ?, ?)').run(f.now - 60000, 20, 40);
+  old.close();
+  let db = f.open();
+  const previous = db.getHistory(f.now - 120000, 1000).points[0];
+  assert.equal(previous.temperature, null);
+  assert.equal(previous.swap, null);
+  assert.equal(previous.cpu, 20);
+  db.appendSample({t:f.now, cpu:30, ram:50, temperature:71, swap:12});
+  db.close();
+  db = f.open();
+  const latest = db.getHistory(f.now - 120000, 1000).points.at(-1);
+  assert.equal(latest.temperature, 71);
+  assert.equal(latest.swap, 12);
+});
 
 test('migra catálogo sin modificar JSON/binarios y no lo reimporta al reiniciar', t => {
   const f = fixture(t);

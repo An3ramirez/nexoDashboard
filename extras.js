@@ -100,36 +100,16 @@ async function pollFast(sys) {
   } catch {
     // se conserva el último ioCache bueno
   }
-  const alerts = evalAlerts(sys);
+  const alerts = sys ? evalAlerts(sys) : alertsCache;
   alertsCache = alerts;
   return { io, alerts };
 }
 
 // ===== 6. Alertas por umbral =====
 
-const THRESHOLDS = {
-  cpu: { warn: 85, crit: 95 },
-  mem: { warn: 85, crit: 95 },
-  disk: { warn: 85, crit: 95 },
-  temp: { warn: 75, crit: 85 },
-};
-
-function alertFor(key, value, label, unit) {
-  if (value === null || value === undefined || Number.isNaN(value)) return null;
-  const t = THRESHOLDS[key];
-  if (value >= t.crit) return { level: 'crit', key, msg: `${label} crítica: ${value}${unit}` };
-  if (value >= t.warn) return { level: 'warn', key, msg: `${label} alta: ${value}${unit}` };
-  return null;
-}
-
 function evalAlerts(sys) {
-  if (!sys) return [];
-  return [
-    alertFor('cpu', sys.cpu, 'CPU', '%'),
-    alertFor('mem', sys.memUsed, 'RAM', '%'),
-    alertFor('disk', sys.diskUsedPct, 'Disco', '%'),
-    alertFor('temp', sys.cpuTemp, 'Temperatura', '°C'),
-  ].filter(Boolean);
+  return (sys?.health?.rules || []).filter(rule => ['warning','critical'].includes(rule.level))
+    .map(rule => ({ key:rule.key, level:rule.level === 'critical' ? 'crit' : 'warn', msg:rule.message }));
 }
 
 let alertsCache = [];
@@ -301,9 +281,11 @@ function compactSamplesIfNeeded() {
 
 async function takeSample() {
   try {
-    const [cpu, mem] = await Promise.all([si.currentLoad(), si.mem()]);
+    const [cpu, mem, temperature] = await Promise.all([si.currentLoad(), si.mem(), si.cpuTemperature().catch(() => ({ main: null }))]);
     const memUsed = Number(((mem.active / mem.total) * 100).toFixed(1));
-    appendSample({ t: Date.now(), cpu: Number(cpu.currentLoad.toFixed(1)), ram: memUsed });
+    appendSample({ t:Date.now(), cpu:Number(cpu.currentLoad.toFixed(1)), ram:memUsed,
+      temperature:Number.isFinite(temperature.main) && temperature.main > 0 ? temperature.main : null,
+      swap:mem.swaptotal > 0 ? Number((100 * mem.swapused / mem.swaptotal).toFixed(1)) : null });
   } catch {
     // sin muestra esta vez
   }
@@ -327,11 +309,12 @@ function downsample(samples, bucketMs, maxPoints) {
 }
 
 function getHistorySeries(range) {
-  const days = { '24h': 1, '7d': 7, '30d': 30, '90d': 90, '180d': 180 };
-  const selected = Object.hasOwn(days, range) ? range : '24h';
-  const windowMs = days[selected] * 24 * 3600 * 1000;
+  const ranges = { '15m':900000, '1h':3600000, '6h':21600000, '24h':86400000, '7d':7*86400000, '30d':30*86400000, '90d':90*86400000, '180d':180*86400000 };
+  const selected = Object.hasOwn(ranges, range) ? range : '24h';
+  const windowMs = ranges[selected];
   const bucketMs = Math.ceil(windowMs / 399);
-  return { range: selected, retentionDays: getStorage().retentionDays, ...getStorage().getHistory(Date.now() - windowMs, bucketMs) };
+  const end = Date.now();
+  return { range:selected, window:{ start:end-windowMs, end }, bucketMs, retentionDays:getStorage().retentionDays, ...getStorage().getHistory(end-windowMs, bucketMs, end) };
 }
 
 function historyToCsv() {

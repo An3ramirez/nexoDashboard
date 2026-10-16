@@ -31,6 +31,7 @@ jobs:
           node --check index.js
           node --check extras.js
           node --check storage.js
+          node --check health.js
           node --check applications.js
           node --check public/applications.js
           node -e "require('node:sqlite')"
