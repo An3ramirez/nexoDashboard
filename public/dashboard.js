@@ -155,7 +155,7 @@
             const validTimes = times.filter(Number.isFinite);
             const start = timeWindow ? timeWindow.start : validTimes.length ? Math.min(...validTimes) : null;
             const end = timeWindow ? timeWindow.end : validTimes.length ? Math.max(...validTimes) : null;
-            const showDate = start !== null && end - start >= 86400000;
+            const showDate = start !== null && end - start > 86400000;
             const pad = { left: 52, right: 14, top: 18, bottom: showDate ? 43 : 27 };
             const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
             const ns = 'http://www.w3.org/2000/svg';
@@ -270,15 +270,15 @@
             setRangeLabels('dio', disk);
         }
 
-        // Muestra las fechas locales de los extremos realmente graficados.
+        // Hasta 24 h basta la hora; los intervalos de varios días incluyen fecha.
         function setRangeLabels(kind, samples, timeWindow = null) {
             const wrap = document.querySelector(`[data-sparkrange="${kind}"]`);
             if (!wrap) return;
             const timed = (Array.isArray(samples) ? samples : []).filter(sample => sample && Number.isFinite(Number(sample.t)) && Number.isFinite(new Date(Number(sample.t)).getTime())).sort((a, b) => Number(a.t) - Number(b.t));
             if (!timed.length && !timeWindow) { wrap.textContent = ''; return; }
-            const fmt = new Intl.DateTimeFormat('es-CO', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
             const start = timeWindow ? timeWindow.start : Number(timed[0].t);
             const end = timeWindow ? timeWindow.end : Number(timed[timed.length-1].t);
+            const fmt = new Intl.DateTimeFormat('es-CO', { ...(end - start > 86400000 ? {day:'numeric', month:'short'} : {}), hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
             wrap.textContent = `${fmt.format(new Date(start))} → ${fmt.format(new Date(end))}${timeWindow ? ' · Sin muestras = espacio vacío' : ''}`;
         }
 
