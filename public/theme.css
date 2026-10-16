@@ -515,6 +515,7 @@ input[type="range"].slider { height: 4px; cursor: pointer; }
 /* ── Gráficas SVG ── */
 .chart-wrap { position: relative; }
 svg.chart { display: block; width: 100%; }
+svg.chart:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 .chart-grid { stroke: var(--border); stroke-width: 1; }
 .chart-axis { font-size: 11px; fill: var(--ink-2); font-family: var(--font); font-variant-numeric: tabular-nums; }
 .chart-rule { stroke: var(--muted); stroke-width: 1; }

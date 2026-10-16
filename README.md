@@ -2,7 +2,7 @@
   <img src="public/app-icon.png" alt="Icono de NexoDashboard" width="88">
 </p>
 
-# NexoDashboard · 3.1.1
+# NexoDashboard · 3.1.2
 
 Tu servidor, de un vistazo. Un panel web autohospedado para consultar rendimiento,
 administrar servicios y compartir archivos desde una misma interfaz.
@@ -36,6 +36,14 @@ de base de datos adicional.
 
 Las integraciones dependen de los servicios instalados y sus permisos: el
 dashboard no instala MPD, Docker, OpenClaw ni las aplicaciones del catálogo.
+
+### Novedades de 3.1.2
+
+- Restaurado el tooltip de las gráficas: muestra hora, valor y unidad de la
+  muestra más cercana al cursor, con guía vertical y puntos resaltados.
+- En gráficas con varias series muestra cada valor por separado. No inventa
+  muestras en huecos sin datos. También admite toque y navegación con teclado:
+  enfocar la gráfica con Tab, usar flechas/Home/End y Escape para cerrar.
 
 ### Novedades de 3.1.1
 

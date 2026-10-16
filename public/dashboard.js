@@ -173,6 +173,7 @@
             const peak = all.length ? Math.max(1, ...all) * 1.15 : 1;
             const magnitude = 10 ** Math.floor(Math.log10(peak));
             const max = fixedMax || [1, 2, 5, 10].map(step => step * magnitude).find(value => value >= peak);
+            const tooltipConfig = {tracks,samples,start,end,max,pad,w,h,unit};
             text(unit, pad.left - 8, 11);
             const number = new Intl.NumberFormat('es-CO', { maximumFractionDigits: max < 2 ? 2 : 1, notation: max >= 10000 ? 'compact' : 'standard' });
             for (let i = 0; i <= 4; i++) {
@@ -202,6 +203,7 @@
                 const label = make('text', { x: w / 2, y: h / 2 + 4, 'text-anchor': 'middle', class: 'chart-axis' });
                 label.textContent = 'Esperando muestras';
                 svg.appendChild(label);
+                if (typeof window !== 'undefined') window.NexoChartTooltip?.attach(svg,tooltipConfig);
                 return;
             }
             tracks.forEach((track) => {
@@ -230,6 +232,7 @@
                     svg.appendChild(make('circle', { cx: last.x, cy: last.y, r: h < 80 ? 3 : 2.5, fill: track.color, stroke: 'var(--surface-solid)', 'stroke-width': 1.5 }));
                 });
             });
+            if (typeof window !== 'undefined') window.NexoChartTooltip?.attach(svg,tooltipConfig);
         }
 
         function renderMetricCharts() {
@@ -242,30 +245,30 @@
             const ram = values(history, 'ram');
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
-            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100, history, '%', window);
-            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100, history, '%', window);
-            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: values(history, 'swap'), color: color('--status-warning') }], 100, history, '%', window);
-            drawSeriesChart(document.querySelector('[data-chart="temperature"]'), [{ values: values(history, 'temperature'), color: color('--status-warning') }], 110, history, '°C', window);
+            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ label:'CPU', values: cpu, color: cpuColor }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ label:'RAM', values: ram, color: ramColor }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ label:'Swap', values: values(history, 'swap'), color: color('--status-warning') }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="temperature"]'), [{ label:'Temperatura', values: values(history, 'temperature'), color: color('--status-warning') }], 110, history, '°C', window);
             setRangeLabels('swap', history, window);
             setRangeLabels('temperature', history, window);
             const historical = history;
             drawSeriesChart(document.querySelector('[data-chart="history"]'), [
-                { values: historical.map((sample) => sample.cpu), color: cpuColor },
-                { values: historical.map((sample) => sample.ram), color: ramColor },
+                { label:'CPU', values: historical.map((sample) => sample.cpu), color: cpuColor },
+                { label:'RAM', values: historical.map((sample) => sample.ram), color: ramColor },
             ], 100, historical, '%', window);
             setRangeLabels('cpu', history, window);
             setRangeLabels('ram', history, window);
             setRangeLabels('history', historical, window);
             const net = state.io?.net?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="net"]'), [
-                { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
-                { values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
+                { label:'Descarga', values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
+                { label:'Subida', values: net.map((sample) => sample.tx), color: color('--s-net-tx') },
             ], null, net, 'KB/s');
             setRangeLabels('net', net);
             const disk = state.io?.disk?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="dio"]'), [
-                { values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
-                { values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
+                { label:'Lectura', values: disk.map((sample) => sample.r), color: color('--s-disk-r') },
+                { label:'Escritura', values: disk.map((sample) => sample.w), color: color('--s-disk-w') },
             ], null, disk, 'KB/s');
             setRangeLabels('dio', disk);
         }

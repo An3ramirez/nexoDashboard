@@ -18,6 +18,7 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.copyFileSync(path.join(root, 'public', 'ambient-contours.svg'), path.join(dir, 'public', 'ambient-contours.svg'));
   fs.copyFileSync(path.join(root, 'public', 'login.html'), path.join(dir, 'public', 'login.html'));
   fs.copyFileSync(path.join(root, 'public', 'files.html'), path.join(dir, 'public', 'files.html'));
+  fs.copyFileSync(path.join(root, 'public', 'chart-tooltip.js'), path.join(dir, 'public', 'chart-tooltip.js'));
   fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
   fs.copyFileSync(path.join(root, 'public', 'transfer-cover-v2.png'), path.join(dir, 'public', 'transfer-cover-v2.png'));
   for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js', 'health.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
@@ -84,6 +85,10 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   assert.equal((await json('/api/applications')).status, 401);
   assert.equal((await json('/api/public-files')).data.files.length, 1);
   await login();
+  const chartTooltip = await fetch(base+'/chart-tooltip.js', {headers:{Cookie:cookie}});
+  assert.equal(chartTooltip.status,200);
+  assert.ok(chartTooltip.headers.get('content-type').includes('javascript'));
+  assert.ok((await chartTooltip.text()).includes('NexoChartTooltip'));
   const catalog = await json('/api/applications');
   assert.equal(catalog.status, 200);
   assert.equal(catalog.data.applications.length, 9);
