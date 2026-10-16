@@ -2,7 +2,7 @@
   <img src="public/app-icon.png" alt="Icono de NexoDashboard" width="88">
 </p>
 
-# NexoDashboard · 3.1.0
+# NexoDashboard · 3.1.1
 
 Tu servidor, de un vistazo. Un panel web autohospedado para consultar rendimiento,
 administrar servicios y compartir archivos desde una misma interfaz.
@@ -36,6 +36,11 @@ de base de datos adicional.
 
 Las integraciones dependen de los servicios instalados y sus permisos: el
 dashboard no instala MPD, Docker, OpenClaw ni las aplicaciones del catálogo.
+
+### Novedades de 3.1.1
+
+- Etiquetas de las gráficas sin fecha en intervalos de hasta 24 horas: solo
+  hora, minuto y segundo. Los intervalos de varios días conservan las fechas.
 
 ### Novedades de 3.1.0
 
@@ -244,6 +249,23 @@ curl --fail http://127.0.0.1:3000/health
 integraciones ni el proxy externo estén funcionando.
 
 ## Desarrollo y pruebas
+
+### Política de versiones
+
+Cada commit propio debe incrementar la versión siguiendo `MAJOR.MINOR.PATCH`:
+
+- **PATCH**: correcciones, ajustes visuales, documentación o mantenimiento sin
+  una funcionalidad nueva (`3.1.0` → `3.1.1`).
+- **MINOR**: funcionalidades nuevas compatibles (`3.1.1` → `3.2.0`).
+- **MAJOR**: cambios incompatibles (`3.2.0` → `4.0.0`).
+
+Actualiza juntos `package.json`, las versiones raíz de `package-lock.json`, los
+indicadores de la interfaz y el encabezado del README. MINOR reinicia PATCH a
+cero; MAJOR reinicia MINOR y PATCH. No modifiques versiones de dependencias ni
+versiones históricas de documentación/capturas solo para cambiar la versión de
+la aplicación. No reescribas commits publicados para corregir un olvido.
+
+### Ejecutar las pruebas
 
 ```bash
 npm test
