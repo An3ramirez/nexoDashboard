@@ -20,7 +20,7 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.copyFileSync(path.join(root, 'public', 'files.html'), path.join(dir, 'public', 'files.html'));
   fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
   fs.copyFileSync(path.join(root, 'public', 'transfer-cover-v2.png'), path.join(dir, 'public', 'transfer-cover-v2.png'));
-  for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
+  for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js', 'health.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ password: 'sqlite-test-only' }));
   fs.writeFileSync(path.join(dir, 'data', 'checks.json'), '[]');
@@ -91,6 +91,12 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   assert.equal(catalog.data.applications.find(app => app.id === 'casa').name, 'Casa · NAS');
   const history = await json('/api/history?range=180d');
   assert.equal(history.data.range, '180d'); assert.equal(history.data.retentionDays, 180);
+  for (const [range, duration] of Object.entries({'15m':900000,'1h':3600000,'6h':21600000,'24h':86400000,'7d':604800000,'30d':2592000000,'90d':7776000000,'180d':15552000000})) {
+    const result = await json(`/api/history?range=${range}`);
+    assert.equal(result.status,200); assert.equal(result.data.range,range);
+    assert.equal(result.data.window.end-result.data.window.start,duration);
+    assert.ok(result.data.points.length <= 400);
+  }
   assert.ok(history.data.samples >= 1);
   assert.ok((await json('/api/history?range=24h')).data.samples < history.data.samples);
   const upload = await fetch(base + '/api/public-files', { method: 'POST', headers: { 'X-File-Name': 'sample.deb' }, body: Buffer.from('sqlite-upload') });

@@ -14,6 +14,8 @@ const fs = require('fs');
 const extras = require('./extras');
 const { getStorage } = require('./storage');
 const { registerApplicationRoutes } = require('./applications');
+const { createHealthMonitor } = require('./health');
+const healthMonitor = createHealthMonitor();
 
 const app = express();
 app.disable('x-powered-by');
@@ -1344,12 +1346,13 @@ async function pollVisitors() {
 }
 
 // Guarda una muestra en los dos buffers y descarta lo que salga de la ventana.
-function recordHistory(cpu, ram, now) {
-    shortHistory.push({ t: now, cpu, ram });
+function recordHistory(stats, now) {
+    const point = { t:now, cpu:stats.cpu, ram:stats.memUsed, temperature:stats.cpuTemp, swap:stats.swapTotalMB > 0 ? stats.swapUsedPct : null };
+    shortHistory.push(point);
     while (shortHistory.length && now - shortHistory[0].t > SHORT_WINDOW_MS) shortHistory.shift();
     if (now - lastDailySampleMs >= 60000) {
         lastDailySampleMs = now;
-        dailyHistory.push({ t: now, cpu, ram });
+        dailyHistory.push(point);
         while (dailyHistory.length && now - dailyHistory[0].t > DAILY_WINDOW_MS) dailyHistory.shift();
     }
 }
@@ -1398,13 +1401,15 @@ async function getSysStats() {
             hostname: osInfo.hostname,
             osDistro: osInfo.distro,
         };
+        stats.sampledAt = Date.now();
+        stats.health = healthMonitor.evaluate(stats, stats.sampledAt);
         sysCache = stats;
         lastSysOkAtMs = Date.now();
         cpuHistory.push(stats.cpu);
         if (cpuHistory.length > HISTORY_LEN) cpuHistory.shift();
         memHistory.push(memUsedPct);
         if (memHistory.length > HISTORY_LEN) memHistory.shift();
-        recordHistory(stats.cpu, memUsedPct, Date.now());
+        recordHistory(stats, stats.sampledAt);
         return stats;
     } catch {
         return sysCache || {};

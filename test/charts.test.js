@@ -45,3 +45,23 @@ test('sin muestras no inventa tiempo ni valores; muestra el estado vacío', () =
   assert.equal(svg.children.filter(child => child.name === 'path').length, 0);
   assert.ok(svg.children.some(child => child.textContent === 'Esperando muestras'));
 });
+test('ventana de una hora permanece completa aunque solo haya un minuto de muestras', () => {
+  const svg = chart();
+  context.drawSeriesChart(svg,[{values:[30,40],color:'blue'}],100,[{t:3540000},{t:3600000}],'%',{start:0,end:3600000});
+  const path = svg.children.find(child => child.name === 'path' && child.attrs.fill === 'none').attrs.d;
+  const firstX = Number(path.match(/M([\d.]+),/)[1]);
+  assert.ok(firstX > 295, 'Los datos recientes quedan al final, no se estiran a toda la hora');
+});
+test('el rango seleccionado muestra ejes incluso sin muestras y no dibuja ceros falsos', () => {
+  const svg = chart();
+  context.drawSeriesChart(svg,[{values:[null,null],color:'orange'}],110,[{t:0},{t:3600000}],'°C',{start:0,end:3600000});
+  assert.equal(svg.children.filter(child => child.name === 'path').length,0);
+  assert.equal(svg.children.filter(child => /^\d{2}:\d{2}:\d{2}$/.test(child.textContent)).length,3);
+});
+test('sensores ausentes y huecos largos no se unen con líneas inventadas', () => {
+  const svg = chart();
+  context.drawSeriesChart(svg,[{values:[60,null,70,72],color:'orange'}],110,[{t:0},{t:60000},{t:120000},{t:600000}],'°C',{start:0,end:3600000});
+  const paths = svg.children.filter(child => child.name === 'path' && child.attrs.fill === 'none');
+  assert.equal(paths.length,3);
+  assert.ok(paths.every(child => !child.attrs.d.includes('L')));
+});

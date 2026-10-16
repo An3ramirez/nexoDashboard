@@ -22,7 +22,7 @@ function openStorage({ databasePath, legacyFilesPath, legacySamplesPath, now = D
   try {
     db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
     const version = db.prepare('PRAGMA user_version').get().user_version;
-    if (version > 1) throw new Error('La base de datos requiere una versión más nueva del dashboard');
+    if (version > 2) throw new Error('La base de datos requiere una versión más nueva del dashboard');
     transaction(() => db.exec(`
       CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, completed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -37,8 +37,13 @@ function openStorage({ databasePath, legacyFilesPath, legacySamplesPath, now = D
       CREATE TABLE IF NOT EXISTS metric_samples (
         timestamp INTEGER PRIMARY KEY, cpu REAL NOT NULL, ram REAL NOT NULL
       );
-      PRAGMA user_version = 1;
     `));
+    transaction(() => {
+      const columns = new Set(db.prepare('PRAGMA table_info(metric_samples)').all().map(row => row.name));
+      if (!columns.has('temperature')) db.exec('ALTER TABLE metric_samples ADD COLUMN temperature REAL');
+      if (!columns.has('swap')) db.exec('ALTER TABLE metric_samples ADD COLUMN swap REAL');
+      db.exec('PRAGMA user_version = 2');
+    });
 
     const hasMigration = (name) => !!db.prepare('SELECT 1 FROM migrations WHERE name = ?').get(name);
     const markMigration = (name) => db.prepare('INSERT INTO migrations VALUES (?, ?)').run(name, now());
@@ -94,9 +99,11 @@ function openStorage({ databasePath, legacyFilesPath, legacySamplesPath, now = D
       backupLegacy(legacyFilesPath, text);
       saveSnapshot({ ...raw, persistenceKeys: raw.persistenceKeys || [] }, 'public-files-json-v1');
     }
-    const insertSample = db.prepare('INSERT INTO metric_samples VALUES (?, ?, ?) ON CONFLICT(timestamp) DO UPDATE SET cpu=excluded.cpu, ram=excluded.ram');
+    const insertSample = db.prepare(`INSERT INTO metric_samples(timestamp,cpu,ram,temperature,swap) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(timestamp) DO UPDATE SET cpu=excluded.cpu, ram=excluded.ram, temperature=excluded.temperature, swap=excluded.swap`);
     function validateSample(sample) {
       if (!sample || !Number.isSafeInteger(sample.t) || !Number.isFinite(sample.cpu) || !Number.isFinite(sample.ram)) throw new Error('Muestra de historial inválida');
+      for (const key of ['temperature','swap']) if (sample[key] != null && !Number.isFinite(sample[key])) throw new Error('Muestra de historial inválida');
     }
     if (!hasMigration('metric-jsonl-v1')) {
       const text = readLegacy(legacySamplesPath);
@@ -105,7 +112,7 @@ function openStorage({ databasePath, legacyFilesPath, legacySamplesPath, now = D
       });
       backupLegacy(legacySamplesPath, text);
       transaction(() => {
-        for (const sample of samples) if (sample.t >= now() - retentionMs) insertSample.run(sample.t, sample.cpu, sample.ram);
+        for (const sample of samples) if (sample.t >= now() - retentionMs) insertSample.run(sample.t, sample.cpu, sample.ram, sample.temperature ?? null, sample.swap ?? null);
         markMigration('metric-jsonl-v1');
       });
     }
@@ -134,17 +141,18 @@ function openStorage({ databasePath, legacyFilesPath, legacySamplesPath, now = D
       },
       appendSample(sample) {
         validateSample(sample);
-        transaction(() => { insertSample.run(sample.t, sample.cpu, sample.ram); prune(); });
+        transaction(() => { insertSample.run(sample.t, sample.cpu, sample.ram, sample.temperature ?? null, sample.swap ?? null); prune(); });
       },
       getSamples(since = now() - retentionMs) {
         return db.prepare('SELECT timestamp AS t, cpu, ram FROM metric_samples WHERE timestamp >= ? ORDER BY timestamp').all(Math.max(since, now() - retentionMs));
       },
-      getHistory(since, bucketMs) {
-        if (!Number.isFinite(since) || !Number.isSafeInteger(bucketMs) || bucketMs <= 0) throw new Error('Rango inválido');
+      getHistory(since, bucketMs, until = now()) {
+        if (!Number.isFinite(since) || !Number.isFinite(until) || until < since || !Number.isSafeInteger(bucketMs) || bucketMs <= 0) throw new Error('Rango inválido');
         const cutoff = Math.max(since, now() - retentionMs);
-        const samples = db.prepare('SELECT COUNT(*) AS count FROM metric_samples WHERE timestamp >= ?').get(cutoff).count;
-        const points = db.prepare(`SELECT MAX(timestamp) AS t, ROUND(AVG(cpu),1) AS cpu, ROUND(AVG(ram),1) AS ram
-          FROM metric_samples WHERE timestamp >= ? GROUP BY CAST(timestamp / ? AS INTEGER) ORDER BY t`).all(cutoff, bucketMs);
+        const samples = db.prepare('SELECT COUNT(*) AS count FROM metric_samples WHERE timestamp >= ? AND timestamp <= ?').get(cutoff, until).count;
+        const points = db.prepare(`SELECT MAX(timestamp) AS t, ROUND(AVG(cpu),1) AS cpu, ROUND(AVG(ram),1) AS ram,
+          ROUND(AVG(temperature),1) AS temperature, ROUND(AVG(swap),1) AS swap
+          FROM metric_samples WHERE timestamp >= ? AND timestamp <= ? GROUP BY CAST(timestamp / ? AS INTEGER) ORDER BY t`).all(cutoff, until, bucketMs);
         return { points, samples };
       },
       prune,

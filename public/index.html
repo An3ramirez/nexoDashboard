@@ -7,7 +7,7 @@
     <title>NexoDashboard</title>
     <link rel="stylesheet" href="/fonts.css">
     <link rel="stylesheet" href="/tailwind.css">
-    <link rel="stylesheet" href="/theme.css?v=20261013-apps-1">
+    <link rel="stylesheet" href="/theme.css?v=20261016-ranges-health-1">
     <script src="/socket.io/socket.io.js" defer></script>
     <link rel="icon" type="image/png" sizes="1254x1254" href="/app-icon.png">
     <link rel="apple-touch-icon" href="/app-icon.png">
@@ -96,7 +96,7 @@
 
         <div class="sidebar-foot">
             <div class="pill" id="serverBadge" style="width:100%;justify-content:center">● --</div>
-            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v3</div>
+            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v3.1.0</div>
         </div>
     </aside>
 
@@ -155,8 +155,14 @@
                 <div class="flex flex-col items-end gap-2">
                     <span id="heroStatus" class="pill">● --</span>
                     <div id="rangeToggle" class="seg" role="group" aria-label="Rango del historial">
-                        <button type="button" data-range="short" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">1 h</button>
-                        <button type="button" data-range="daily" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">24 h</button>
+                        <button type="button" data-range="15m" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">15 min</button>
+                        <button type="button" data-range="1h" class="range-btn px-2.5 py-1 range-btn-active" aria-pressed="true" style="font-size:11px;font-weight:600">1 h</button>
+                        <button type="button" data-range="6h" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">6 h</button>
+                        <button type="button" data-range="24h" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">24 h</button>
+                        <button type="button" data-range="7d" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">7 días</button>
+                        <button type="button" data-range="30d" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">30 días</button>
+                        <button type="button" data-range="90d" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">90 días</button>
+                        <button type="button" data-range="180d" class="range-btn px-2.5 py-1" style="font-size:11px;font-weight:600">180 días</button>
                     </div>
                 </div>
             </div>
@@ -186,7 +192,7 @@
         <!-- ══════════ Rendimiento ══════════ -->
         <div class="sec-head reveal" id="sec-perf">
             <h2>Rendimiento</h2>
-            <p>CPU · memoria · disco · histórico</p>
+            <p>CPU · RAM · Swap · temperatura · histórico</p>
         </div>
         <div class="bento">
             <section class="card hoverable reveal span-2" data-tags="cpu procesador nucleos cores temperatura" aria-label="CPU">
@@ -219,19 +225,7 @@
                 <div class="flex justify-between mt-2 faint" style="font-size:11px" data-sparkrange="ram"><span>--</span><span>--</span></div>
             </section>
 
-            <section class="card hoverable reveal span-2" data-tags="disco disk almacenamiento smart salud" aria-label="Disco">
-                <div class="card-head">
-                    <div class="icon-chip tint-disk"><svg width="16" height="16"><use href="#i-disk"/></svg></div>
-                    <span class="card-title">Disco</span>
-                    <span class="card-tools"><span class="pill" id="smartPill" style="font-size:10px">SMART --</span></span>
-                </div>
-                <div class="stat-value" data-color="disk"><span data-value="disk"><span class="sk block h-8 w-20"></span></span></div>
-                <div class="usage-track mt-3"><div id="diskBar" style="width:0%"></div></div>
-                <div class="flex justify-between mt-2" style="font-size:11px"><span class="faint" data-value="diskUsedLabel">--</span><span class="faint" data-value="diskTotalLabel">--</span></div>
-                <div id="smartMini" class="muted mt-3" style="font-size:11.5px">Comprobando salud SMART…</div>
-            </section>
-
-            <section class="card reveal span-3" data-tags="swap intercambio memoria virtual uso capacidad tendencia" aria-label="Uso de Swap">
+            <section class="card reveal span-2" data-tags="swap intercambio memoria virtual uso capacidad tendencia" aria-label="Uso de Swap">
                 <div class="card-head">
                     <div class="icon-chip tint-warn"><svg width="16" height="16"><use href="#i-ram"/></svg></div>
                     <span class="card-title big">Swap</span>
@@ -247,12 +241,35 @@
                 <div class="mt-2 faint" style="font-size:11px" data-sparkrange="swap"></div>
             </section>
 
-            <section class="card reveal span-3" data-tags="historico historial history grafica 24h 7 30 90 180 dias export csv" aria-label="Histórico de rendimiento">
+            <section class="card hoverable reveal span-3" data-tags="disco disk almacenamiento smart salud" aria-label="Disco">
+                <div class="card-head">
+                    <div class="icon-chip tint-disk"><svg width="16" height="16"><use href="#i-disk"/></svg></div>
+                    <span class="card-title">Disco</span>
+                    <span class="card-tools"><span class="pill" id="smartPill" style="font-size:10px">SMART --</span></span>
+                </div>
+                <div class="stat-value" data-color="disk"><span data-value="disk"><span class="sk block h-8 w-20"></span></span></div>
+                <div class="usage-track mt-3"><div id="diskBar" style="width:0%"></div></div>
+                <div class="flex justify-between mt-2" style="font-size:11px"><span class="faint" data-value="diskUsedLabel">--</span><span class="faint" data-value="diskTotalLabel">--</span></div>
+                <div id="smartMini" class="muted mt-3" style="font-size:11.5px">Comprobando salud SMART…</div>
+            </section>
+
+            <section class="card reveal span-3" data-tags="temperatura temperature cpu calor refrigeracion" aria-label="Temperatura del procesador">
+                <div class="card-head"><span class="card-title big">Temperatura CPU</span><span class="card-tools muted" style="font-size:11px">°C</span></div>
+                <div class="stat-value" data-value="temperatureValue">--</div>
+                <div class="chart-wrap mt-3"><svg data-chart="temperature" viewBox="0 0 300 140" preserveAspectRatio="none" class="chart" style="height:140px" role="img" aria-label="Gráfica de temperatura del procesador"></svg></div>
+                <div class="mt-2 faint" style="font-size:11px" data-sparkrange="temperature"></div>
+                <p class="faint mt-2" style="font-size:11px">Sin sensor o sin registro previo, el intervalo queda vacío. No se sustituyen lecturas ausentes por 0 °C.</p>
+            </section>
+
+            <section class="card reveal span-6" data-tags="historico historial history grafica 24h 7 30 90 180 dias export csv" aria-label="Histórico de rendimiento">
                 <div class="card-head" style="flex-wrap:wrap">
                     <div class="icon-chip tint-accent"><svg width="16" height="16"><use href="#i-hist"/></svg></div>
                     <span class="card-title big">Histórico CPU + RAM</span>
                     <span class="card-tools" style="flex-wrap:wrap;max-width:100%">
                         <span class="seg" role="group" aria-label="Rango del histórico" style="flex-wrap:wrap;max-width:100%">
+                            <button type="button" data-hist="15m" class="range-btn hist-btn px-2.5 py-1" style="font-size:11px;font-weight:600">15 min</button>
+                            <button type="button" data-hist="1h" aria-pressed="true" class="range-btn hist-btn active px-2.5 py-1" style="font-size:11px;font-weight:600">1 h</button>
+                            <button type="button" data-hist="6h" class="range-btn hist-btn px-2.5 py-1" style="font-size:11px;font-weight:600">6 h</button>
                             <button type="button" data-hist="24h" class="range-btn hist-btn px-2.5 py-1" style="font-size:11px;font-weight:600">24 h</button>
                             <button type="button" data-hist="7d" class="range-btn hist-btn px-2.5 py-1" style="font-size:11px;font-weight:600">7 días</button>
                             <button type="button" data-hist="30d" class="range-btn hist-btn px-2.5 py-1" style="font-size:11px;font-weight:600">30 días</button>
@@ -634,7 +651,7 @@
         </div>
 
         <footer class="text-center faint mt-10 pb-2" style="font-size:11px">
-            NexoDashboard v3 · monitoreo local del servidor
+            NexoDashboard v3.1.0 · monitoreo local del servidor
         </footer>
     </div>
 </div>
@@ -718,8 +735,8 @@
     </div>
 </div>
 
-<script src="/dashboard.js?v=20261013-chart-axes-1" defer></script>
-<script src="/insights.js?v=20261013-3" defer></script>
+<script src="/dashboard.js?v=20261016-ranges-health-1" defer></script>
+<script src="/insights.js?v=20261016-ranges-health-1" defer></script>
 <script src="/panels.js" defer></script>
 <script src="/page.js?v=20261013-admin-header-1" defer></script>
 <script src="/applications.js?v=20261013-apps-1" defer></script>

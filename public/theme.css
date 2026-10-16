@@ -292,6 +292,8 @@ body::before {
 }
 @media (min-width: 1024px) { .topbar { margin: 0 -28px; padding: 12px 28px; } }
 .topbar-inner { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#rangeToggle { flex-wrap:wrap; justify-content:flex-end; max-width:310px; }
+@media(max-width:640px) { .hero > div > .flex.flex-col { flex-wrap:wrap; } #rangeToggle { justify-content:flex-start; } }
 .search-box {
   display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--border);

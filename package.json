@@ -1,7 +1,7 @@
 {
   "name": "dashboard-server",
-  "version": "1.0.0",
-  "description": "",
+  "version": "3.1.0",
+  "description": "Dashboard de servidor con métricas en tiempo real, historial SQLite y transferencia pública de archivos.",
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js"

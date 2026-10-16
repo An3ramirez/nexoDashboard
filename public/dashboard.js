@@ -3,7 +3,9 @@
         // sesiones y del User-Agent/IP de los visitantes — el UA lo controla quien
         // visita, así que sin esto una petición con UA malicioso se ejecuta aquí.
         const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], swapHistory: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: 'short' };
+        const state = { sys: {}, oc: {}, models: {}, ping: null, memHistory: [], cpuHistory: [], swapHistory: [], liveHistory: [], historicalPoints: [], processes: [], gatewayLogs: [], player: {}, bluetooth: {}, io: {}, alerts: [], history: { short: [], daily: [] }, range: '1h' };
+        const HISTORY_RANGES = { '15m':900000, '1h':3600000, '6h':21600000, '24h':86400000, '7d':7*86400000, '30d':30*86400000, '90d':90*86400000, '180d':180*86400000 };
+        function selectedWindow(now = Date.now()) { return { start:now-HISTORY_RANGES[state.range], end:now }; }
         let lastArtKey = null;
 
         function setValue(key, value) {
@@ -19,6 +21,7 @@
             setValue('ramHero', sys.memUsed != null ? `${sys.memUsed}%` : '--');
             setValue('diskHero', sys.diskUsedPct != null ? `${sys.diskUsedPct}%` : '--');
             setValue('tempHero', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
+            setValue('temperatureValue', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
             setValue('swapHero', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
             const fmtMem = (mb) => mb == null || !Number.isFinite(Number(mb)) ? '--' : Number(mb) >= 1024 ? `${(Number(mb) / 1024).toFixed(1)} GB` : `${Math.round(Number(mb))} MB`;
             const swapConfigured = Number(sys.swapTotalMB) > 0 && sys.swapUsedPct != null;
@@ -66,32 +69,28 @@
             setValue('healthTemp', sys.cpuTemp != null ? `${sys.cpuTemp}°C` : '--');
             setValue('healthSwap', sys.swapUsedPct != null ? `${sys.swapUsedPct}%` : 'No configurada');
 
-            const checks = [
-                [sys.cpu, 85, 95, 'CPU'], [sys.memUsed, 85, 95, 'RAM'],
-                [sys.diskUsedPct, 85, 95, 'disco'], [sys.cpuTemp, 75, 85, 'temperatura'],
-                [sys.swapUsedPct, 75, 90, 'swap'],
-            ];
-            const critical = checks.filter(([value, , limit]) => value != null && value >= limit);
-            const warning = checks.filter(([value, warnAt, limit]) => value != null && value >= warnAt && value < limit);
-            const alerts = Array.isArray(state.alerts) ? state.alerts.length : 0;
-            const level = critical.length ? 'critical' : (warning.length || alerts ? 'warning' : 'good');
+            const health = sys.health;
+            const fresh = health && Date.now() - health.sampledAt <= health.maxGapMs;
+            const level = fresh ? health.level : 'unknown';
+            const affected = fresh ? health.rules.filter(rule => ['warning','critical'].includes(rule.level)) : [];
+            const alerts = affected.length;
             const levelEl = document.getElementById('healthLevel');
             if (levelEl) {
-                levelEl.textContent = level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Estable';
-                levelEl.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+                levelEl.textContent = level === 'critical' ? 'Crítico' : level === 'warning' ? 'Observando' : level === 'unknown' ? 'Sin datos' : 'Estable';
+                levelEl.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : level === 'good' ? 'online' : ''}`;
             }
             const title = document.getElementById('healthTitle');
-            if (title) title.textContent = level === 'critical' ? 'Requiere atención inmediata' : level === 'warning' ? 'Servidor bajo observación' : 'Servidor funcionando bien';
+            if (title) title.textContent = level === 'critical' ? 'Requiere atención: nivel sostenido' : level === 'warning' ? 'Servidor bajo observación' : level === 'unknown' ? 'Esperando métricas válidas' : 'Servidor funcionando bien';
             const copy = document.getElementById('healthCopy');
             if (copy) {
-                const causes = critical.length ? critical.map((item) => item[3]) : warning.map((item) => item[3]);
-                copy.textContent = causes.length ? `Revisa ${causes.join(', ')}.` : alerts ? `${alerts} alerta${alerts === 1 ? '' : 's'} activa${alerts === 1 ? '' : 's'}.` : 'Las métricas principales están dentro de los umbrales.';
+                copy.textContent = level === 'unknown' ? 'CPU y RAM requieren muestras recientes. No se interpreta la falta de datos como recuperación.'
+                    : affected.length ? affected.map(rule => rule.message).join(' · ') : 'Las métricas principales están dentro de los umbrales.';
             }
             setValue('healthAlerts', alerts);
             const badge = document.getElementById('heroStatus');
             if (badge) {
-                badge.textContent = `● ${level === 'critical' ? 'Crítico' : level === 'warning' ? 'Atención' : 'Operativo'}`;
-                badge.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : 'online'}`;
+                badge.textContent = `● ${level === 'critical' ? 'Crítico' : level === 'warning' ? 'Observando' : level === 'unknown' ? 'Sin datos' : 'Operativo'}`;
+                badge.className = `pill ${level === 'critical' ? 'offline' : level === 'warning' ? 'warn' : level === 'good' ? 'online' : ''}`;
             }
         }
 
@@ -145,7 +144,7 @@
                     stroke-linecap="round" stroke-linejoin="round"></polyline>`;
         }
 
-        function drawSeriesChart(svg, tracks, fixedMax = null, samples = [], unit = '%') {
+        function drawSeriesChart(svg, tracks, fixedMax = null, samples = [], unit = '%', timeWindow = null) {
             if (!svg) return;
             const box = (svg.getAttribute('viewBox') || '0 0 300 90').split(/\s+/).map(Number);
             const rect = svg.getBoundingClientRect();
@@ -154,8 +153,8 @@
             svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
             const times = samples.map(sample => Number(sample?.t));
             const validTimes = times.filter(Number.isFinite);
-            const start = validTimes.length ? Math.min(...validTimes) : null;
-            const end = validTimes.length ? Math.max(...validTimes) : null;
+            const start = timeWindow ? timeWindow.start : validTimes.length ? Math.min(...validTimes) : null;
+            const end = timeWindow ? timeWindow.end : validTimes.length ? Math.max(...validTimes) : null;
             const showDate = start !== null && end - start >= 86400000;
             const pad = { left: 52, right: 14, top: 18, bottom: showDate ? 43 : 27 };
             const plotW = w - pad.left - pad.right, plotH = h - pad.top - pad.bottom;
@@ -206,25 +205,36 @@
                 return;
             }
             tracks.forEach((track) => {
-                const points = track.values.map((value, index) => {
-                    if (value == null || !Number.isFinite(Number(value))) return null;
+                const segments = [[]];
+                let previousTime = null;
+                const maxGap = timeWindow ? Math.max(120000, (end - start) / 399 * 3) : Infinity;
+                track.values.forEach((value, index) => {
+                    if (value == null || !Number.isFinite(Number(value)) || (timeWindow && (!Number.isFinite(times[index]) || times[index] < start || times[index] > end))) {
+                        if (segments[segments.length - 1].length) segments.push([]);
+                        previousTime = null;
+                        return;
+                    }
+                    if (previousTime !== null && times[index] - previousTime > maxGap && segments[segments.length - 1].length) segments.push([]);
+                    previousTime = times[index];
                     const ratio = start !== null && Number.isFinite(times[index])
                         ? end === start ? 0.5 : (times[index] - start) / (end - start)
                         : track.values.length === 1 ? 0.5 : index / (track.values.length - 1);
-                    return { x: pad.left + plotW * ratio, y: bottom - Math.max(0, Math.min(max, Number(value))) / max * plotH };
-                }).filter(Boolean);
-                if (!points.length) return;
-                const line = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
-                const area = `${line} L${points[points.length - 1].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} L${points[0].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
-                svg.appendChild(make('path', { d: area, fill: track.color, opacity: '0.1' }));
-                svg.appendChild(make('path', { d: line, fill: 'none', stroke: track.color, 'stroke-width': h < 80 ? 2.5 : 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-                const last = points[points.length - 1];
-                svg.appendChild(make('circle', { cx: last.x, cy: last.y, r: h < 80 ? 3 : 2.5, fill: track.color, stroke: 'var(--surface-solid)', 'stroke-width': 1.5 }));
+                    segments[segments.length - 1].push({ x: pad.left + plotW * ratio, y: bottom - Math.max(0, Math.min(max, Number(value))) / max * plotH });
+                });
+                segments.filter(points => points.length).forEach(points => {
+                    const line = points.map((point, index) => `${index ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ');
+                    const area = `${line} L${points[points.length - 1].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} L${points[0].x.toFixed(1)},${(pad.top + plotH).toFixed(1)} Z`;
+                    svg.appendChild(make('path', { d: area, fill: track.color, opacity: '0.1' }));
+                    svg.appendChild(make('path', { d: line, fill: 'none', stroke: track.color, 'stroke-width': h < 80 ? 2.5 : 2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+                    const last = points[points.length - 1];
+                    svg.appendChild(make('circle', { cx: last.x, cy: last.y, r: h < 80 ? 3 : 2.5, fill: track.color, stroke: 'var(--surface-solid)', 'stroke-width': 1.5 }));
+                });
             });
         }
 
         function renderMetricCharts() {
-            const history = activeSeries();
+            const window = selectedWindow();
+            const history = activeSeries(window);
             const values = (items, key) => (Array.isArray(items) ? items : []).map((sample) =>
                 sample && typeof sample === 'object' ? sample[key] : sample
             );
@@ -232,19 +242,20 @@
             const ram = values(history, 'ram');
             const color = (token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim();
             const cpuColor = color('--s-cpu'), ramColor = color('--s-ram');
-            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100, history);
-            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100, history);
-            const swap = state.swapHistory || [];
-            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: swap.map((sample) => sample.pct), color: color('--status-warning') }], 100, swap);
-            setRangeLabels('swap', swap);
-            const historical = state.historicalPoints || history;
+            drawSeriesChart(document.querySelector('[data-chart="cpu"]'), [{ values: cpu, color: cpuColor }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="ram"]'), [{ values: ram, color: ramColor }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="swap"]'), [{ values: values(history, 'swap'), color: color('--status-warning') }], 100, history, '%', window);
+            drawSeriesChart(document.querySelector('[data-chart="temperature"]'), [{ values: values(history, 'temperature'), color: color('--status-warning') }], 110, history, '°C', window);
+            setRangeLabels('swap', history, window);
+            setRangeLabels('temperature', history, window);
+            const historical = history;
             drawSeriesChart(document.querySelector('[data-chart="history"]'), [
                 { values: historical.map((sample) => sample.cpu), color: cpuColor },
                 { values: historical.map((sample) => sample.ram), color: ramColor },
-            ], 100, historical);
-            setRangeLabels('cpu', history);
-            setRangeLabels('ram', history);
-            setRangeLabels('history', historical);
+            ], 100, historical, '%', window);
+            setRangeLabels('cpu', history, window);
+            setRangeLabels('ram', history, window);
+            setRangeLabels('history', historical, window);
             const net = state.io?.net?.hist || [];
             drawSeriesChart(document.querySelector('[data-chart="net"]'), [
                 { values: net.map((sample) => sample.rx), color: color('--s-net-rx') },
@@ -260,21 +271,25 @@
         }
 
         // Muestra las fechas locales de los extremos realmente graficados.
-        function setRangeLabels(kind, samples) {
+        function setRangeLabels(kind, samples, timeWindow = null) {
             const wrap = document.querySelector(`[data-sparkrange="${kind}"]`);
             if (!wrap) return;
             const timed = (Array.isArray(samples) ? samples : []).filter(sample => sample && Number.isFinite(Number(sample.t)) && Number.isFinite(new Date(Number(sample.t)).getTime())).sort((a, b) => Number(a.t) - Number(b.t));
-            if (!timed.length) { wrap.textContent = ''; return; }
-            const fmt = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
-            wrap.textContent = `${fmt.format(new Date(Number(timed[0].t)))} → ${fmt.format(new Date(Number(timed[timed.length - 1].t)))}`;
+            if (!timed.length && !timeWindow) { wrap.textContent = ''; return; }
+            const fmt = new Intl.DateTimeFormat('es-CO', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false });
+            const start = timeWindow ? timeWindow.start : Number(timed[0].t);
+            const end = timeWindow ? timeWindow.end : Number(timed[timed.length-1].t);
+            wrap.textContent = `${fmt.format(new Date(start))} → ${fmt.format(new Date(end))}${timeWindow ? ' · Sin muestras = espacio vacío' : ''}`;
         }
 
-        // Serie activa según el selector 1 h / 24 h.
-        function activeSeries() {
-            const hist = state.history || {};
-            const daily = hist.daily || [];
-            const short = hist.short || [];
-            return state.range === 'daily' ? daily : short;
+        // Combina el histórico persistente y las muestras recientes del intervalo elegido.
+        function activeSeries(window = selectedWindow()) {
+            const merged = new Map();
+            for (const sample of [...state.historicalPoints, ...state.liveHistory]) {
+                if (!sample || sample.t < window.start || sample.t > window.end) continue;
+                merged.set(sample.t, sample);
+            }
+            return [...merged.values()].sort((a,b) => a.t-b.t);
         }
 
         function render() {
@@ -381,7 +396,6 @@
             const ramSeries = series.map(s => s.ram);
             sparkline(document.querySelector('[data-spark="cpu"]'), cpuSeries.length >= 2 ? cpuSeries : state.cpuHistory, cssVar('--series-cpu'));
             sparkline(document.querySelector('[data-spark="ram"]'), ramSeries.length >= 2 ? ramSeries : state.memHistory, cssVar('--series-ram'));
-            setRangeLabels(series);
 
             const badge = document.getElementById('serverBadge');
             if (socket.connected) {
@@ -517,6 +531,12 @@
         socket.on('stats', (data) => {
             if (data.sys) {
                 state.sys = data.sys;
+                const t = data.sys.sampledAt;
+                if (Number.isFinite(t) && Number.isFinite(data.sys.cpu) && Number.isFinite(data.sys.memUsed)) {
+                    const sample = { t, cpu:data.sys.cpu, ram:data.sys.memUsed, temperature:data.sys.cpuTemp ?? null, swap:data.sys.swapTotalMB > 0 ? data.sys.swapUsedPct : null };
+                    if (state.liveHistory.at(-1)?.t !== t) state.liveHistory.push(sample);
+                    while (state.liveHistory.length && t-state.liveHistory[0].t > 3600000) state.liveHistory.shift();
+                }
                 const pct = Number(data.sys.swapUsedPct);
                 if (Number.isFinite(pct) && Number(data.sys.swapTotalMB) > 0) {
                     state.swapHistory.push({ t: Date.now(), pct });
@@ -540,45 +560,49 @@
             render();
         });
 
-        document.querySelectorAll('#rangeToggle .range-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                state.range = btn.dataset.range === 'daily' ? 'daily' : 'short';
-                document.querySelectorAll('#rangeToggle .range-btn').forEach(b => {
-                    b.classList.toggle('range-btn-active', b === btn);
-                });
-                render();
+        // Todos los chips controlan la misma ventana, incluidas CPU/RAM/Swap/temperatura.
+        let historyRequest = 0, historyController = null, historyLoading = false;
+        async function loadHistoricalRange(range, refreshOnly = false) {
+            if (!Object.hasOwn(HISTORY_RANGES, range) || (refreshOnly && historyLoading)) return;
+            const changed = state.range !== range;
+            state.range = range;
+            if (changed) state.historicalPoints = [];
+            document.querySelectorAll('[data-range], [data-hist]').forEach(button => {
+                const selected = (button.dataset.range || button.dataset.hist) === range;
+                button.classList.toggle('range-btn-active', selected);
+                button.setAttribute('aria-pressed', String(selected));
             });
-        });
-        document.querySelector('#rangeToggle .range-btn')?.classList.add('range-btn-active');
-
-        // El rango histórico es independiente de las gráficas en vivo.
-        let historyRequest = 0;
-        async function loadHistoricalRange(range) {
+            renderMetricCharts();
+            historyController?.abort();
+            const controller = new AbortController(); historyController = controller;
             const request = ++historyRequest;
+            historyLoading = true;
+            const timeout = setTimeout(() => controller.abort(), 12000);
             const status = document.getElementById('historyStatus');
-            if (status) status.textContent = 'Cargando histórico…';
+            if (status && !refreshOnly) status.textContent = 'Cargando intervalo…';
             try {
-                const response = await fetch(`/api/history?range=${encodeURIComponent(range)}`);
+                const response = await fetch(`/api/history?range=${encodeURIComponent(range)}`, { signal:controller.signal });
                 if (!response.ok) throw new Error('No se pudo consultar el histórico');
                 const data = await response.json();
                 if (request !== historyRequest) return;
                 if (!data.ok || !Array.isArray(data.points)) throw new Error('Respuesta de histórico inválida');
                 state.historicalPoints = data.points;
-                document.querySelectorAll('[data-hist]').forEach(button => {
-                    const selected = button.dataset.hist === data.range;
-                    button.classList.toggle('range-btn-active', selected);
-                    button.setAttribute('aria-pressed', String(selected));
-                });
-                if (status) status.textContent = `${data.samples} muestras · retención ${data.retentionDays} días`;
+                if (status) status.textContent = `${data.samples} muestras guardadas · retención ${data.retentionDays} días · actualización cada 30 s`;
                 renderMetricCharts();
             } catch (error) {
-                if (request === historyRequest && status) status.textContent = error.message;
+                if (request === historyRequest && status) status.textContent = 'No se pudo actualizar el histórico. Se muestran las muestras disponibles; pulsa un intervalo para reintentar.';
+            } finally {
+                clearTimeout(timeout);
+                if (request === historyRequest) historyLoading = false;
             }
         }
-        document.querySelectorAll('[data-hist]').forEach(button => {
-            button.addEventListener('click', () => loadHistoricalRange(button.dataset.hist));
+        document.querySelectorAll('[data-range], [data-hist]').forEach(button => {
+            button.addEventListener('click', () => loadHistoricalRange(button.dataset.range || button.dataset.hist));
         });
-        if (document.querySelector('[data-hist]') && ['/', '/overview'].includes(location.pathname)) loadHistoricalRange('24h');
+        if (['/', '/overview'].includes(location.pathname)) {
+            loadHistoricalRange('1h');
+            setInterval(() => { if (!document.hidden) loadHistoricalRange(state.range, true); }, 30000);
+        }
 
         // ===== Reproductor (MPD) =====
         function postPlayer(path, body) {
