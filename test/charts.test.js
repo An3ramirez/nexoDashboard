@@ -65,3 +65,25 @@ test('sensores ausentes y huecos largos no se unen con líneas inventadas', () =
   assert.equal(paths.length,3);
   assert.ok(paths.every(child => !child.attrs.d.includes('L')));
 });
+test('hasta 24 horas los ejes omiten la fecha, incluso cruzando medianoche', () => {
+  for (const duration of [3600000,86400000]) {
+    const svg = chart();
+    context.drawSeriesChart(svg,[{values:[30,40],color:'blue'}],100,[{t:0},{t:duration}],'%',{start:0,end:duration});
+    const labels = svg.children.filter(child=>child.name==='text').map(child=>child.textContent);
+    assert.ok(!labels.some(label=>/^\d{2}\/\d{2}\/\d{2}$/.test(label)));
+    assert.equal(labels.filter(label=>/^\d{2}:\d{2}:\d{2}$/.test(label)).length,3);
+  }
+});
+test('etiqueta inferior usa solo horas hasta 24 h y conserva fechas en varios días', () => {
+  const wrap = {textContent:''};
+  const labelsContext = vm.createContext({document:{querySelector:()=>wrap}});
+  const labelStart = source.indexOf('        function setRangeLabels(');
+  const labelEnd = source.indexOf('        function activeSeries(',labelStart);
+  vm.runInContext(source.slice(labelStart,labelEnd),labelsContext);
+  for(const duration of [3600000,86400000]) {
+    labelsContext.setRangeLabels('cpu',[],{start:1800000000000,end:1800000000000+duration});
+    assert.match(wrap.textContent,/^\d{2}:\d{2}:\d{2} → \d{2}:\d{2}:\d{2} ·/);
+  }
+  labelsContext.setRangeLabels('cpu',[],{start:1800000000000,end:1800000000000+7*86400000});
+  assert.ok(!/^\d{2}:/.test(wrap.textContent));
+});
