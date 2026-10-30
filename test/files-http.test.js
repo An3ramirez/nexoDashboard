@@ -21,10 +21,11 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   fs.copyFileSync(path.join(root, 'public', 'chart-tooltip.js'), path.join(dir, 'public', 'chart-tooltip.js'));
   fs.copyFileSync(path.join(root, 'public', 'nexo-music-cover.png'), path.join(dir, 'public', 'nexo-music-cover.png'));
   fs.copyFileSync(path.join(root, 'public', 'transfer-cover-v2.png'), path.join(dir, 'public', 'transfer-cover-v2.png'));
-  for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js', 'health.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
+  for (const file of ['index.js', 'extras.js', 'storage.js', 'applications.js', 'application-services.js', 'health.js']) fs.copyFileSync(path.join(root, file), path.join(dir, file));
   fs.symlinkSync(path.join(root, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
   fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({ password: 'sqlite-test-only' }));
   fs.writeFileSync(path.join(dir, 'data', 'checks.json'), '[]');
+  fs.writeFileSync(path.join(dir,'app-services.json'),'{}');
   const legacyId = 'e'.repeat(36);
   fs.writeFileSync(path.join(filesDir, `${legacyId}.bin`), 'legacy');
   fs.writeFileSync(path.join(filesDir, 'index.json'), JSON.stringify({ files: [{ id: legacyId, name: 'legacy.txt', size: 6, createdAt: Date.now(), expiresAt: null, persistent: true }], persistenceKeys: [], defaultTtlMinutes: 5, cleanupEnabled: true }));
@@ -38,7 +39,7 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const listener = net.createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
   const port = listener.address().port; await new Promise(resolve => listener.close(resolve));
   async function start() {
-    child = spawn(process.execPath, ['index.js'], { cwd: dir, env: { ...process.env, PORT: String(port), PUBLIC_FILES_DIR: filesDir, DASHBOARD_DB_PATH: path.join(filesDir, 'test.sqlite'), HISTORY_RETENTION_DAYS: '180' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    child = spawn(process.execPath, ['index.js'], { cwd: dir, env: { ...process.env, PORT: String(port), PUBLIC_FILES_DIR: filesDir, DASHBOARD_DB_PATH: path.join(filesDir, 'test.sqlite'), HISTORY_RETENTION_DAYS: '180', APP_SERVICES_CONFIG:path.join(dir,'app-services.json') }, stdio: ['ignore', 'pipe', 'pipe'] });
     await new Promise((resolve, reject) => {
       let output = '';
       const timer = setTimeout(() => reject(new Error('Timeout de arranque de la aplicación de prueba')), 12000);
@@ -83,6 +84,7 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   assert.equal(background.status, 200);
   assert.ok(background.headers.get('content-type').includes('image/svg+xml'));
   assert.equal((await json('/api/applications')).status, 401);
+  assert.equal((await json('/api/applications/vault/control','POST',{action:'stop',confirm:true})).status,401);
   assert.equal((await json('/api/public-files')).data.files.length, 1);
   await login();
   const chartTooltip = await fetch(base+'/chart-tooltip.js', {headers:{Cookie:cookie}});
@@ -92,7 +94,11 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   const catalog = await json('/api/applications');
   assert.equal(catalog.status, 200);
   assert.equal(catalog.data.applications.length, 9);
-  assert.equal(catalog.data.availabilityChecked, false);
+  assert.equal(catalog.data.availabilityChecked, true);
+  assert.equal(catalog.data.applications.find(app=>app.id==='dashboard').service.canStop,false);
+  assert.equal((await json('/api/applications/dashboard/control','POST',{action:'stop',confirm:true})).status,403);
+  assert.equal((await json('/api/applications/vault/control','POST',{action:'stop',confirm:true})).status,409);
+  assert.equal((await json('/api/applications/vault/control','POST',{action:'restart',confirm:true})).status,400);
   assert.equal(catalog.data.applications.find(app => app.id === 'casa').name, 'Casa · NAS');
   const history = await json('/api/history?range=180d');
   assert.equal(history.data.range, '180d'); assert.equal(history.data.retentionDays, 180);
@@ -119,7 +125,8 @@ test('HTTP: migración, subida, persistencia, reinicio y descarga con SQLite', {
   assert.equal(await (await fetch(base + `/files/${legacyId}`)).text(), 'legacy');
   assert.equal(JSON.parse(fs.readFileSync(path.join(filesDir, 'index.json'))).files.length, 1);
   await login();
-  assert.deepEqual((await json('/api/applications')).data.applications, catalog.data.applications);
+  const withoutLiveState=applications=>applications.map(({service,...application})=>application);
+  assert.deepEqual(withoutLiveState((await json('/api/applications')).data.applications), withoutLiveState(catalog.data.applications));
   const removed = await json(`/api/public-files/${uploaded.id}`, 'DELETE');
   assert.equal(removed.status, 200);
   assert.equal((await fetch(base + `/files/${uploaded.id}`)).status, 404);

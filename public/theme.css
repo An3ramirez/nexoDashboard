@@ -193,6 +193,21 @@ body::before {
 .app-domain { font-size:10px; color:var(--faint); overflow-wrap:anywhere; }
 .app-open-label { margin-left:auto; font-size:11px; font-weight:700; color:var(--accent-ink); }
 .apps-disclaimer { font-size:11px; line-height:1.7; color:var(--faint); margin:20px 0; }
+.app-service-line { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px; }
+.app-service-badge { display:inline-flex;align-items:center;gap:7px;border-radius:99px;padding:5px 9px;font-size:11px;font-weight:700;background:var(--overlay);color:var(--muted);border:1px solid currentColor; }
+.app-service-badge::before { content:'';width:6px;height:6px;border-radius:50%;background:currentColor; }
+.app-service-good {color:var(--status-good);}.app-service-off {color:var(--status-critical);}.app-service-warning {color:var(--status-warning);}
+.app-service-time {font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums;}
+.app-service-reason {font-size:11px;line-height:1.6;color:var(--muted);margin:0 0 12px;}
+.app-service-actions {display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;}
+.app-control-button {border:1px solid var(--border-glow);background:var(--accent-soft);color:var(--accent-ink);padding:8px 13px;border-radius:10px;font:600 12px var(--font);cursor:pointer;}
+.app-control-stop {color:var(--status-critical);border-color:var(--border);background:var(--overlay);}
+.app-control-button:disabled {opacity:.4;cursor:not-allowed;}
+.app-operation-result {font-size:11px;line-height:1.7;color:var(--status-good);margin:0 0 12px;}.app-operation-error {color:var(--status-critical);}
+.app-control-dialog {margin:auto;padding:26px;width:min(440px,calc(100% - 32px));border:1px solid var(--border-glow);border-radius:20px;background:var(--surface-solid);color:var(--ink);box-shadow:var(--shadow-pop);}
+.app-control-dialog::backdrop {background:rgba(0,0,0,.65);}
+.app-control-dialog h2 {font-size:20px;margin:0 0 12px;}.app-control-dialog p {font-size:13px;line-height:1.8;color:var(--muted);}
+.app-dialog-actions {display:flex;justify-content:flex-end;gap:12px;margin-top:22px;}.app-dialog-actions .btn-ghost {padding:8px 13px;border:1px solid var(--border);border-radius:10px;background:var(--overlay);color:var(--ink);font:600 12px var(--font);cursor:pointer;}
 @media(max-width:639px) {
   .apps-hero { padding:24px; }
   .apps-hero-art { display:none; }

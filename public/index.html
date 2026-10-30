@@ -7,7 +7,7 @@
     <title>NexoDashboard</title>
     <link rel="stylesheet" href="/fonts.css">
     <link rel="stylesheet" href="/tailwind.css">
-    <link rel="stylesheet" href="/theme.css?v=3.1.2">
+    <link rel="stylesheet" href="/theme.css?v=3.2.0">
     <script src="/socket.io/socket.io.js" defer></script>
     <link rel="icon" type="image/png" sizes="1254x1254" href="/app-icon.png">
     <link rel="apple-touch-icon" href="/app-icon.png">
@@ -96,7 +96,7 @@
 
         <div class="sidebar-foot">
             <div class="pill" id="serverBadge" style="width:100%;justify-content:center">● --</div>
-            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v3.1.2</div>
+            <div class="text-center faint mt-2" style="font-size:10.5px">NexoDashboard · v3.2.0</div>
         </div>
     </aside>
 
@@ -303,11 +303,11 @@
                 <div><span class="apps-eyebrow">TU ESPACIO DE TRABAJO</span><h1>Tu servidor.<br><span>Tus aplicaciones.</span></h1><p>Música, proyectos, archivos y seguridad.<br>Elige una aplicación y sigue donde lo dejaste.</p><div class="apps-hero-meta"><span id="appsTotal">Cargando catálogo…</span><span>Accesos externos · nueva pestaña</span></div></div>
                 <div class="apps-hero-art" aria-hidden="true"><div class="apps-art-tile apps-color-purple"><svg><use href="#i-box"/></svg></div><div class="apps-art-tile apps-color-blue"><svg><use href="#i-shield"/></svg></div><div class="apps-art-tile apps-color-pink"><svg><use href="#i-music"/></svg></div></div>
             </div>
-            <div class="apps-toolbar"><label class="apps-search"><svg width="18" height="18" aria-hidden="true"><use href="#i-search"/></svg><input id="appsSearch" type="search" placeholder="Buscar una aplicación…" aria-label="Buscar aplicaciones" autocomplete="off"></label><button id="appsRefresh" type="button" class="btn-ghost">Actualizar catálogo</button></div>
+            <div class="apps-toolbar"><label class="apps-search"><svg width="18" height="18" aria-hidden="true"><use href="#i-search"/></svg><input id="appsSearch" type="search" placeholder="Buscar una aplicación…" aria-label="Buscar aplicaciones" autocomplete="off"></label><button id="appsRefresh" type="button" class="btn-ghost">Actualizar estados</button></div>
             <div id="appsCategories" class="apps-categories" role="group" aria-label="Filtrar aplicaciones por categoría"></div>
             <p id="appsStatus" class="faint" role="status" aria-live="polite">Cargando aplicaciones…</p>
             <div id="appsGrid" class="apps-grid"></div>
-            <p class="apps-disclaimer">Estos accesos corresponden a tus rutas publicadas. El catálogo no verifica que cada servicio esté en línea; las aplicaciones conservan su propio inicio de sesión.</p>
+            <p class="apps-disclaimer">El estado del proceso y la respuesta HTTP no son lo mismo. Los controles solo actúan sobre servicios asociados en el servidor. Las aplicaciones conservan su propio inicio de sesión. No se permite detener el dashboard ni proxies compartidos desde estas tarjetas.</p>
         </section>
 
         <div class="sec-head reveal" id="sec-files">
@@ -651,7 +651,7 @@
         </div>
 
         <footer class="text-center faint mt-10 pb-2" style="font-size:11px">
-            NexoDashboard v3.1.2 · monitoreo local del servidor
+            NexoDashboard v3.2.0 · monitoreo local del servidor
         </footer>
     </div>
 </div>
@@ -740,7 +740,7 @@
 <script src="/insights.js?v=20261016-ranges-health-1" defer></script>
 <script src="/panels.js" defer></script>
 <script src="/page.js?v=20261013-admin-header-1" defer></script>
-<script src="/applications.js?v=20261013-apps-1" defer></script>
+<script src="/applications.js?v=3.2.0" defer></script>
 <script src="/visitors.js" defer></script>
 <script src="/audit.js" defer></script>
 <script src="/file-admin.js?v=20261013-2" defer></script>
