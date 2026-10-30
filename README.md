@@ -2,7 +2,7 @@
   <img src="public/app-icon.png" alt="Icono de NexoDashboard" width="88">
 </p>
 
-# NexoDashboard · 3.1.2
+# NexoDashboard · 3.2.0
 
 Tu servidor, de un vistazo. Un panel web autohospedado para consultar rendimiento,
 administrar servicios y compartir archivos desde una misma interfaz.
@@ -26,7 +26,7 @@ de base de datos adicional.
 | Resumen | CPU total y por núcleo, RAM, Swap, almacenamiento, temperatura y estado operativo. |
 | Gráficas e historial | Ejes con hora, minuto y segundo; rangos de 15 min a 180 días, datos persistentes y exportación CSV de CPU/RAM. |
 | Archivos | Transferencia pública, progreso de subida, enlaces compartibles, caducidad y administración privada. |
-| Aplicaciones | Lanzador con logos, búsqueda y categorías para música, NAS, bóveda y otros servicios. |
+| Aplicaciones | Lanzador con logos, búsqueda, categorías, estado del servicio y controles privados de inicio/parada. |
 | Red y discos | Tráfico de red, actividad de disco y diagnóstico SMART cuando está disponible. |
 | Visitantes | Sesiones de navegación diferenciadas por dispositivo/navegador y URL actual de los sitios instrumentados. |
 | Infraestructura y procesos | Contenedores, servicios, procesos, registros y comprobaciones del servidor según las herramientas disponibles. |
@@ -36,6 +36,17 @@ de base de datos adicional.
 
 Las integraciones dependen de los servicios instalados y sus permisos: el
 dashboard no instala MPD, Docker, OpenClaw ni las aplicaciones del catálogo.
+
+### Novedades de 3.2.0
+
+- Indicador en cada aplicación: activo, detenido, parcial, sin verificar o
+  respuesta HTTP cuando no se ha asociado un proceso.
+- Iniciar/detener servicios asociados de Docker o systemd con confirmación en
+  modal, auditoría, límites de operaciones y actualización automática cada 15 s.
+- Protección del dashboard, archivos públicos y proxies compartidos. Un estado
+  sin verificar no habilita acciones. No se inician servicios automáticamente.
+- Configuración opcional `APP_SERVICES_CONFIG` para adaptar las asociaciones
+  al servidor, sin aceptar comandos ni nombres de unidades desde el navegador.
 
 ### Novedades de 3.1.2
 
@@ -147,6 +158,7 @@ automáticamente**: expórtalas en tu shell o decláralas en el servicio systemd
 | `PUBLIC_FILES_DIR` | `data/public-files` dentro del proyecto | Carpeta de binarios y ubicación predeterminada de SQLite. Usar una ruta absoluta fuera del checkout en producción. |
 | `DASHBOARD_DB_PATH` | `$PUBLIC_FILES_DIR/nexodashboard.sqlite` | Ruta alternativa del archivo SQLite. |
 | `HISTORY_RETENTION_DAYS` | `180` | Retención de métricas, entre 1 y 3650 días. No cambia la caducidad de los archivos. |
+| `APP_SERVICES_CONFIG` | Perfil incluido en `application-services.js` | Ruta absoluta a un JSON de asociaciones de servicios. Reemplaza el perfil completo; `{}` desactiva controles externos. Ver [guía](docs/applications.md). |
 
 Ejemplo con datos fuera del repositorio:
 
@@ -318,7 +330,11 @@ Las utilidades se configuran en `tailwind.config.js`.
 - SQLite usa WAL y transacciones; no compartas un catálogo entre dos procesos
   escritores del dashboard porque también existe una caché en memoria.
 - Las sesiones no constituyen un sistema multiusuario de cuentas y roles.
-- La lista de aplicaciones es un lanzador, no un monitor de disponibilidad.
+- El estado del proceso no garantiza que la aplicación funcione. Las sondas
+  HTTP solo comprueban respuesta local, sin autenticar ni seguir redirecciones.
+- Los controles de aplicaciones requieren permisos explícitos del usuario del
+  servicio sobre sus unidades/contenedores. No se instalan permisos sudo ni se
+  añaden usuarios al grupo Docker automáticamente.
 
 Para reportar problemas, incluye versión, entorno, pasos para reproducir y errores
 anonimizados. No publiques contraseñas, cookies, tokens ni enlaces a archivos privados.

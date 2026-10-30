@@ -540,7 +540,7 @@ app.get(Array.from(DASHBOARD_PAGES), (req, res) => res.sendFile('index.html', { 
 // Funcionalidades extendidas (extras.js): sus rutas quedan tras
 // requireDashAuth, así que exigen sesión como todo lo demás.
 extras.registerRoutes(app);
-registerApplicationRoutes(app, getStorage());
+registerApplicationRoutes(app, getStorage(), {audit:auditAction});
 extras.boot();
 
 app.post('/api/change-password', express.json(), (req, res) => {

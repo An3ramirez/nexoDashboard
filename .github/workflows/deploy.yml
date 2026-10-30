@@ -33,6 +33,7 @@ jobs:
           node --check storage.js
           node --check health.js
           node --check applications.js
+          node --check application-services.js
           node --check public/applications.js
           node -e "require('node:sqlite')"
           npm ci --omit=dev
